@@ -1,0 +1,115 @@
+name: PDA fee-claim experiment (devnet)
+
+on:
+  workflow_dispatch:
+    inputs:
+      pool_id:
+        description: 'Optional: a Raydium CPMM pool address on devnet, to check how far back its price history reaches'
+        required: false
+        default: ''
+
+permissions:
+  contents: read
+
+jobs:
+  experiment:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    env:
+      STATE_DIR: ${{ github.workspace }}/.state
+      RPC_URL: https://api.devnet.solana.com
+    steps:
+      - uses: actions/checkout@v4
+
+      # Keys for a throwaway devnet wallet and the experiment program live in the cache so
+      # later runs reuse them. Devnet only. Never put real funds in this wallet.
+      - name: Restore saved keys and results
+        uses: actions/cache/restore@v4
+        with:
+          path: .state
+          key: state-${{ github.run_id }}
+          restore-keys: state-
+
+      - name: Install Solana tools
+        run: |
+          sh -c "$(curl -sSfL https://release.anza.xyz/v2.1.21/install)"
+          echo "$HOME/.local/share/solana/install/active_release/bin" >> "$GITHUB_PATH"
+
+      - name: Create the throwaway wallet and program address (first run only)
+        run: |
+          mkdir -p .state
+          [ -f .state/deployer.json ] || solana-keygen new --no-bip39-passphrase --silent --outfile .state/deployer.json
+          [ -f .state/program.json ] || solana-keygen new --no-bip39-passphrase --silent --outfile .state/program.json
+          solana-keygen pubkey .state/program.json > .state/program-id.txt
+          echo "DEPLOYER=$(solana-keygen pubkey .state/deployer.json)" >> "$GITHUB_ENV"
+
+      - name: Save keys
+        uses: actions/cache/save@v4
+        if: always()
+        with:
+          path: .state
+          key: state-${{ github.run_id }}-keys
+
+      - name: Check the wallet has devnet SOL
+        run: |
+          solana config set --url "$RPC_URL" >/dev/null
+          BAL=$(solana balance "$DEPLOYER" | awk '{print $1}')
+          echo "Wallet $DEPLOYER holds $BAL SOL"
+          # The public faucet sometimes works; ignore failure.
+          if awk "BEGIN{exit !($BAL < 3)}"; then
+            solana airdrop 2 "$DEPLOYER" || true
+            BAL=$(solana balance "$DEPLOYER" | awk '{print $1}')
+          fi
+          if awk "BEGIN{exit !($BAL < 3)}"; then
+            {
+              echo "### Fund the test wallet, then run this workflow again"
+              echo ""
+              echo "Send **3 devnet SOL** to \`$DEPLOYER\`"
+              echo ""
+              echo "It currently holds $BAL SOL. This is a throwaway wallet that exists only for the experiment."
+            } >> "$GITHUB_STEP_SUMMARY"
+            echo "::error::Send 3 devnet SOL to $DEPLOYER and run the workflow again."
+            exit 1
+          fi
+
+      - name: Build the program
+        working-directory: experiment/pda-claim
+        run: cargo build-sbf --sbf-out-dir "$GITHUB_WORKSPACE/experiment/out"
+
+      - name: Deploy to devnet
+        run: |
+          solana program deploy experiment/out/pda_claim.so \
+            --program-id .state/program.json \
+            --keypair .state/deployer.json \
+            --url "$RPC_URL"
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Install script dependencies
+        working-directory: experiment
+        run: npm install --no-audit --no-fund
+
+      - name: Run the experiment
+        working-directory: experiment
+        env:
+          POOL_ID: ${{ inputs.pool_id }}
+        run: node run.mjs 2>&1 | tee "$GITHUB_WORKSPACE/experiment/result.txt"
+
+      - name: Save results
+        uses: actions/cache/save@v4
+        if: always()
+        with:
+          path: .state
+          key: state-${{ github.run_id }}-final
+
+      - name: Show the result on the run page
+        if: always()
+        run: |
+          {
+            echo "### Experiment output"
+            echo '```'
+            tail -n 60 experiment/result.txt 2>/dev/null || echo "No output."
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
