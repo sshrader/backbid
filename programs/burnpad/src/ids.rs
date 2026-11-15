@@ -7,6 +7,11 @@ pub const TOKEN_PROGRAM: Pubkey = pubkey!("TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss62
 pub const ATA_PROGRAM: Pubkey = pubkey!("ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL");
 
 #[cfg(all(feature = "devnet", not(feature = "mainnet")))]
+pub const CPMM: Pubkey = pubkey!("DRaycpLY18LhpbydsBWbVJtxpNv9oXPgjRSfpF2bWpYb");
+#[cfg(feature = "mainnet")]
+pub const CPMM: Pubkey = pubkey!("CPMMoo8L3F4NbTegBCKVNunggL7H1ZpdTHKxQB5qKP1C");
+
+#[cfg(all(feature = "devnet", not(feature = "mainnet")))]
 pub const LAUNCHLAB: Pubkey = pubkey!("DRay6fNdQ5J82H7xV6uq2aV3mNrUZ1J4PgSKsWgptcm6");
 #[cfg(feature = "mainnet")]
 pub const LAUNCHLAB: Pubkey = pubkey!("LanMV9sAd7wArD4vJFi2qDdfnVhFxYSUg6eADduJ3uj");
@@ -49,4 +54,10 @@ pub fn launchlab_fee_auth() -> Pubkey {
 }
 pub fn launchlab_fee_vault(platform: &Pubkey) -> Pubkey {
     Pubkey::find_program_address(&[platform.as_ref(), WSOL.as_ref()], &LAUNCHLAB).0
+}
+
+/// Raydium CPMM pool for a token against wrapped SOL, given the pool config. The two mints are ordered by address.
+pub fn cpmm_pool(cp_config: &Pubkey, mint: &Pubkey) -> Pubkey {
+    let (a, b) = if mint.as_ref() < WSOL.as_ref() { (mint, &WSOL) } else { (&WSOL, mint) };
+    Pubkey::find_program_address(&[b"pool", cp_config.as_ref(), a.as_ref(), b.as_ref()], &CPMM).0
 }

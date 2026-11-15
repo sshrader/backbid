@@ -38,6 +38,9 @@ pub enum Error {
     NotYet,
     NotCreator,
     BadString,
+    Refused,
+    NoPrice,
+    OutOfBounds,
 }
 impl From<Error> for ProgramError {
     fn from(e: Error) -> Self {
@@ -54,6 +57,9 @@ pub fn process(program_id: &Pubkey, accounts: &[AccountInfo], data: &[u8]) -> Pr
         3 => mark_graduated(program_id, accounts),
         4 => claim_creator(program_id, accounts),
         5 => expire_creator(program_id, accounts),
+        6 => set_pause(program_id, accounts, rest),
+        7 => set_params(program_id, accounts, rest),
+        8 => sell_to_vault(program_id, accounts, rest),
         _ => Err(Error::BadInstruction.into()),
     }
 }
@@ -161,7 +167,7 @@ fn initialize_config(program_id: &Pubkey, accounts: &[AccountInfo]) -> ProgramRe
     let (expected, bump) = config_pda(program_id);
     same(config, &expected)?;
     create_pda(admin, config, system, CONFIG_LEN, &[b"config", &[bump]], program_id)?;
-    Config { bump, admin: admin.key.to_bytes(), treasury: treasury.key.to_bytes(), paused: false }.write(&mut config.try_borrow_mut_data()?);
+    Config { bump, admin: admin.key.to_bytes(), treasury: treasury.key.to_bytes(), paused: false, params: Params::DEFAULT }.write(&mut config.try_borrow_mut_data()?);
     msg!("config created");
     Ok(())
 }
@@ -190,7 +196,8 @@ fn create_launch(program_id: &Pubkey, accounts: &[AccountInfo], data: &[u8]) -> 
     require(creator.is_signer, Error::NotSigner)?;
     require(config.owner == program_id, Error::WrongOwner)?;
     same(config, &config_pda(program_id).0)?;
-    require(!Config::read(&config.try_borrow_data()?).ok_or(Error::BadAccount)?.paused, Error::Paused)?;
+    let cfg = Config::read(&config.try_borrow_data()?).ok_or(Error::BadAccount)?;
+    require(!cfg.paused, Error::Paused)?;
     same(system, &system_program::ID)?;
     same(launchlab, &LAUNCHLAB)?;
 
@@ -231,10 +238,11 @@ fn create_launch(program_id: &Pubkey, accounts: &[AccountInfo], data: &[u8]) -> 
         treasury_bps: TREASURY_BPS,
         expired: false,
         total_harvested: 0,
+        cpmm_pool: [0u8; 32],
     }
     .write(&mut launch.try_borrow_mut_data()?);
     Stream { bump: stream_bump, total_received: 0, claimed: 0, vest_start: 0 }.write(&mut stream.try_borrow_mut_data()?);
-    Vault { bump: vault_bump }.write(&mut vault.try_borrow_mut_data()?);
+    Vault::new(vault_bump, cfg.params).write(&mut vault.try_borrow_mut_data()?);
 
     // The token's own LaunchLab platform: this program's authority address is its admin and fee wallet.
     invoke(&system_instruction::transfer(creator.key, authority.key, AUTHORITY_FUND_LAMPORTS), &[creator.clone(), authority.clone(), system.clone()])?;
@@ -373,13 +381,15 @@ fn harvest_fees(program_id: &Pubkey, accounts: &[AccountInfo]) -> ProgramResult 
 }
 
 /* ---------- 3: mark_graduated ---------- */
-/// Anyone can call once LaunchLab has migrated the token. Starts the creator's vesting.
-/// Accounts: launch (w), stream (w), LaunchLab curve pool.
+/// Anyone can call once LaunchLab has migrated the token. Records the Raydium pool and starts the creator's vesting.
+/// Accounts: launch (w), stream (w), LaunchLab curve pool, platform config, Raydium CPMM pool.
 fn mark_graduated(program_id: &Pubkey, accounts: &[AccountInfo]) -> ProgramResult {
     let it = &mut accounts.iter();
     let launch_ai = next_account_info(it)?;
     let stream_ai = next_account_info(it)?;
     let pool = next_account_info(it)?;
+    let platform = next_account_info(it)?;
+    let cpmm = next_account_info(it)?;
 
     let mut launch = load_launch(program_id, launch_ai)?;
     let mint = Pubkey::new_from_array(launch.mint);
@@ -387,11 +397,23 @@ fn mark_graduated(program_id: &Pubkey, accounts: &[AccountInfo]) -> ProgramResul
     require(launch.graduated_at == 0, Error::AlreadyExists)?;
     require(!launch.expired, Error::NotYet)?;
     same(pool, &Pubkey::new_from_array(launch.pool))?;
-    require(pool.owner == &LAUNCHLAB, Error::WrongOwner)?;
+    same(platform, &Pubkey::new_from_array(launch.platform))?;
+    require(pool.owner == &LAUNCHLAB && platform.owner == &LAUNCHLAB, Error::WrongOwner)?;
     require(launchlab_status(&pool.try_borrow_data()?) == Some(2), Error::NotYet)?;
+
+    // The Raydium pool is derived from the platform's pool config and the two mints, then checked against its own fields.
+    let cp_config = platform_cp_config(&platform.try_borrow_data()?).ok_or(Error::BadAccount)?;
+    same(cpmm, &cpmm_pool(&Pubkey::new_from_array(cp_config), &mint))?;
+    require(cpmm.owner == &CPMM, Error::WrongOwner)?;
+    {
+        let p = CpmmPool::read(&cpmm.try_borrow_data()?).ok_or(Error::BadAccount)?;
+        let ok = (p.mint_a == mint.to_bytes() && p.mint_b == WSOL.to_bytes()) || (p.mint_b == mint.to_bytes() && p.mint_a == WSOL.to_bytes());
+        require(ok, Error::BadAccount)?;
+    }
 
     let t = now()?;
     launch.graduated_at = t;
+    launch.cpmm_pool = cpmm.key.to_bytes();
     stream.vest_start = t;
     launch.write(&mut launch_ai.try_borrow_mut_data()?);
     stream.write(&mut stream_ai.try_borrow_mut_data()?);
@@ -461,5 +483,163 @@ fn expire_creator(program_id: &Pubkey, accounts: &[AccountInfo]) -> ProgramResul
     launch.expired = true;
     launch.write(&mut launch_ai.try_borrow_mut_data()?);
     msg!("creator stream expired; {} moved to the vault", balance);
+    Ok(())
+}
+
+/* ---------- 6: set_pause ---------- */
+/// Admin only. Pauses or resumes new launches and all vault sells. Never blocks harvests or creator claims.
+/// Accounts: admin (signer), config (w). Data: one byte, 1 to pause.
+fn set_pause(program_id: &Pubkey, accounts: &[AccountInfo], data: &[u8]) -> ProgramResult {
+    let it = &mut accounts.iter();
+    let admin = next_account_info(it)?;
+    let config = next_account_info(it)?;
+    let mut cfg = load_config_admin(program_id, admin, config)?;
+    cfg.paused = *data.first().ok_or(Error::BadInstruction)? != 0;
+    cfg.write(&mut config.try_borrow_mut_data()?);
+    Ok(())
+}
+
+fn load_config_admin(program_id: &Pubkey, admin: &AccountInfo, config: &AccountInfo) -> Result<Config, ProgramError> {
+    require(admin.is_signer, Error::NotSigner)?;
+    require(config.owner == program_id, Error::WrongOwner)?;
+    same(config, &config_pda(program_id).0)?;
+    let cfg = Config::read(&config.try_borrow_data()?).ok_or(Error::BadAccount)?;
+    require(cfg.admin == admin.key.to_bytes(), Error::NotCreator)?;
+    Ok(cfg)
+}
+
+/* ---------- 7: set_params ---------- */
+/// Admin only. Sets the defaults that new tokens' vaults copy. A token's own vault never changes after launch.
+/// Accounts: admin (signer), config (w).
+/// Data: discount_bps u16, max_sale_bps u16, daily_bps u16, guard_bps u16, twap_window u32, reserve u64.
+fn set_params(program_id: &Pubkey, accounts: &[AccountInfo], data: &[u8]) -> ProgramResult {
+    let it = &mut accounts.iter();
+    let admin = next_account_info(it)?;
+    let config = next_account_info(it)?;
+    let mut cfg = load_config_admin(program_id, admin, config)?;
+    require(data.len() >= 20, Error::BadInstruction)?;
+    let p = Params {
+        discount_bps: u16::from_le_bytes(data[0..2].try_into().unwrap()),
+        max_sale_bps: u16::from_le_bytes(data[2..4].try_into().unwrap()),
+        daily_bps: u16::from_le_bytes(data[4..6].try_into().unwrap()),
+        guard_bps: u16::from_le_bytes(data[6..8].try_into().unwrap()),
+        twap_window: u32::from_le_bytes(data[8..12].try_into().unwrap()),
+        reserve: u64::from_le_bytes(data[12..20].try_into().unwrap()),
+    };
+    // Hard bounds the admin cannot step outside. Devnet allows a short window and no reserve, so tests can run quickly.
+    #[cfg(feature = "mainnet")]
+    let (win_min, reserve_min) = (600u32, 50_000_000u64);
+    #[cfg(not(feature = "mainnet"))]
+    let (win_min, reserve_min) = (60u32, 0u64);
+    let ok = (200..=2000).contains(&p.discount_bps)
+        && (50..=500).contains(&p.max_sale_bps)
+        && (200..=2500).contains(&p.daily_bps)
+        && (500..=2500).contains(&p.guard_bps)
+        && (win_min..=3600).contains(&p.twap_window)
+        && (reserve_min..=1_000_000_000).contains(&p.reserve);
+    require(ok, Error::OutOfBounds)?;
+    cfg.params = p;
+    cfg.write(&mut config.try_borrow_mut_data()?);
+    Ok(())
+}
+
+/* ---------- 8: sell_to_vault ---------- */
+/// A holder sells tokens to the token's burn vault at a discount to the lower of TWAP and spot. The vault pays
+/// wrapped SOL and the tokens are burned in the same instruction.
+///
+/// Accounts: holder (signer), launch, vault (w), config, Raydium pool, pool vault A, pool vault B, observation,
+/// token mint (w), holder token account (w), holder WSOL account (w), vault WSOL account (w), token program.
+/// Data: tokens u64, min_sol_out u64.
+fn sell_to_vault(program_id: &Pubkey, accounts: &[AccountInfo], data: &[u8]) -> ProgramResult {
+    let it = &mut accounts.iter();
+    let holder = next_account_info(it)?;
+    let launch_ai = next_account_info(it)?;
+    let vault_ai = next_account_info(it)?;
+    let config = next_account_info(it)?;
+    let pool_ai = next_account_info(it)?;
+    let pool_vault_a = next_account_info(it)?;
+    let pool_vault_b = next_account_info(it)?;
+    let observation = next_account_info(it)?;
+    let mint_ai = next_account_info(it)?;
+    let holder_tokens = next_account_info(it)?;
+    let holder_wsol = next_account_info(it)?;
+    let vault_wsol = next_account_info(it)?;
+    let token_program = next_account_info(it)?;
+
+    require(holder.is_signer, Error::NotSigner)?;
+    require(data.len() >= 16, Error::BadInstruction)?;
+    let tokens = u64::from_le_bytes(data[0..8].try_into().unwrap());
+    let min_out = u64::from_le_bytes(data[8..16].try_into().unwrap());
+
+    let launch = load_launch(program_id, launch_ai)?;
+    let mint = Pubkey::new_from_array(launch.mint);
+    require(launch.graduated_at != 0, Error::NotYet)?;
+    same(mint_ai, &mint)?;
+    require(mint_ai.owner == &TOKEN_PROGRAM, Error::WrongOwner)?;
+    same(token_program, &TOKEN_PROGRAM)?;
+
+    require(config.owner == program_id, Error::WrongOwner)?;
+    same(config, &config_pda(program_id).0)?;
+    require(!Config::read(&config.try_borrow_data()?).ok_or(Error::BadAccount)?.paused, Error::Paused)?;
+
+    let (vault_key, vault_bump) = vault_pda(program_id, &mint);
+    same(vault_ai, &vault_key)?;
+    require(vault_ai.owner == program_id, Error::WrongOwner)?;
+    let mut vault = Vault::read(&vault_ai.try_borrow_data()?).ok_or(Error::BadAccount)?;
+    require(!vault.paused, Error::Paused)?;
+    same(vault_wsol, &wsol_ata(&vault_key))?;
+    require(holder_wsol.owner == &TOKEN_PROGRAM, Error::WrongOwner)?;
+    require(token_mint(&holder_wsol.try_borrow_data()?) == Some(WSOL.to_bytes()), Error::BadAccount)?;
+
+    // Read the pool: which side is the token, and the real reserves (vault balances less fees owed).
+    same(pool_ai, &Pubkey::new_from_array(launch.cpmm_pool))?;
+    require(pool_ai.owner == &CPMM, Error::WrongOwner)?;
+    let pool = CpmmPool::read(&pool_ai.try_borrow_data()?).ok_or(Error::BadAccount)?;
+    same(pool_vault_a, &Pubkey::new_from_array(pool.vault_a))?;
+    same(pool_vault_b, &Pubkey::new_from_array(pool.vault_b))?;
+    same(observation, &Pubkey::new_from_array(pool.observation))?;
+    let token_is_a = pool.mint_a == mint.to_bytes();
+    require(token_is_a || pool.mint_b == mint.to_bytes(), Error::BadAccount)?;
+    let reserve_a = wsol_amount(pool_vault_a)?.saturating_sub(pool.fees_a);
+    let reserve_b = wsol_amount(pool_vault_b)?.saturating_sub(pool.fees_b);
+    let (token_reserve, sol_reserve) = if token_is_a { (reserve_a, reserve_b) } else { (reserve_b, reserve_a) };
+    let spot = math::spot_x32(sol_reserve, token_reserve).ok_or(Error::NoPrice)?;
+
+    // Time-weighted price from the pool's own observation account.
+    let t = now()?;
+    let samples = observations(&observation.try_borrow_data()?, token_is_a).ok_or(Error::BadAccount)?;
+    let obs: Vec<math::Obs> = samples.iter().map(|(ts, cum)| math::Obs { ts: *ts, cum: *cum }).collect();
+    let twap = math::twap_x32(&obs, t as u64, vault.params.twap_window as u64, spot).ok_or(Error::NoPrice)?;
+    require(math::within_guard(spot, twap, vault.params.guard_bps), Error::Refused)?;
+
+    let payment = math::bid(tokens, spot, twap, vault.params.discount_bps);
+    require(payment >= min_out, Error::Refused)?;
+
+    // Spending limits, with the 24-hour window rolled over if it has expired.
+    let balance = wsol_amount(vault_wsol)?;
+    if vault.window_start == 0 || t - vault.window_start >= math::DAY {
+        vault.window_start = t;
+        vault.window_start_balance = balance;
+        vault.window_spent = 0;
+    }
+    let p = vault.params;
+    math::check_limits(payment, balance, p.reserve, p.max_sale_bps, vault.window_start_balance, vault.window_spent, p.daily_bps).map_err(|_| Error::Refused)?;
+
+    // Pay the holder from the vault, then burn the holder's tokens. Both happen or neither does.
+    token_transfer(token_program, vault_wsol, holder_wsol, vault_ai, payment, &[b"vault", mint.as_ref(), &[vault_bump]])?;
+    let mut burn = vec![8u8];
+    burn.extend_from_slice(&tokens.to_le_bytes());
+    let burn_ix = Instruction {
+        program_id: TOKEN_PROGRAM,
+        accounts: vec![AccountMeta::new(*holder_tokens.key, false), AccountMeta::new(*mint_ai.key, false), AccountMeta::new_readonly(*holder.key, true)],
+        data: burn,
+    };
+    invoke(&burn_ix, &[holder_tokens.clone(), mint_ai.clone(), holder.clone(), token_program.clone()])?;
+
+    vault.window_spent += payment;
+    vault.tokens_burned = vault.tokens_burned.saturating_add(tokens);
+    vault.total_paid = vault.total_paid.saturating_add(payment);
+    vault.write(&mut vault_ai.try_borrow_mut_data()?);
+    msg!("burned {} tokens for {} lamports", tokens, payment);
     Ok(())
 }
