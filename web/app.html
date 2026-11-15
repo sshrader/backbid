@@ -64,7 +64,7 @@ ol { margin: 0; padding-left: 20px; }
       <div class="field" style="justify-content:end"><button class="btn flame" type="submit">Register platform</button></div>
     </form>
     <p class="small muted" id="plat-note" hidden>A wallet can register one platform. The wallet that signs becomes its admin and receives its fees. Raydium adds its own 0.25% on top.</p>
-    <div class="row" id="plat-actions" hidden><button class="btn ghost" id="claim">Claim platform fees</button><span class="small muted">Only the platform's fee wallet can do this.</span></div>
+    <div class="row" id="plat-actions" hidden><button class="btn ghost" id="claim">Claim platform fees</button><span class="small muted">Only the platform's fee wallet can do this. Fees arrive as wrapped SOL.</span></div>
   </section>
 
   <section class="panel">
@@ -138,7 +138,9 @@ async function loadConfig() {
     try { localStorage.setItem('apiUrl', apiUrl()); } catch (e) {}
     const has = Boolean(cfg.platformId);
     $('plat').className = '';
-    $('plat').innerHTML = has ? 'Registered on devnet: <span class="mono">' + esc(cfg.platformId) + '</span>' + (cfg.platformFromEnv ? '' : '<br><span class="small muted">Saved on the server only. Copy this into the API’s PLATFORM_ID variable so it survives a redeploy.</span>')
+    const ps = cfg.platform;
+    $('plat').innerHTML = has ? 'Registered on devnet: <span class="mono">' + esc(cfg.platformId) + '</span>' +
+      (ps ? '<br>Platform fee ' + (ps.feePercent == null ? 'unknown' : ps.feePercent + '% per trade') + '. Fees ready to claim: <b class="num">' + Number(ps.claimableSol).toFixed(6) + ' SOL</b>.' : '') + (cfg.platformFromEnv ? '' : '<br><span class="small muted">Saved on the server only. Copy this into the API’s PLATFORM_ID variable so it survives a redeploy.</span>')
       : 'No platform registered yet. Register one to start launching.';
     $('plat-form').hidden = has; $('plat-note').hidden = has; $('plat-actions').hidden = !has;
   } catch (e) { $('plat').className = 'muted'; $('plat').textContent = e.message; }
@@ -158,7 +160,7 @@ async function loadTokens() {
       return '<div class="tok"><div class="row" style="justify-content:space-between"><b>' + esc(t.name) + ' <span class="muted">' + esc(t.symbol) + '</span></b><span class="small">' +
         (!p ? 'Pool not readable right now' : onCurve ? 'On the curve, ' + pc.toFixed(1) + '%' : 'Graduated to a Raydium pool') + '</span></div>' +
         '<div class="mono muted">' + esc(t.mint) + '</div>' + (t.description ? '<p>' + esc(t.description) + '</p>' : '') +
-        (p ? '<div class="prog"><i style="width:' + pc + '%"></i></div><p class="small num">Raised ' + p.raisedSol.toFixed(4) + ' of ' + p.targetSol + ' SOL. Platform fees waiting: ' + p.unclaimedPlatformFeeSol.toFixed(6) + ' SOL.' +
+        (p ? '<div class="prog"><i style="width:' + pc + '%"></i></div><p class="small num">Raised ' + p.raisedSol.toFixed(4) + ' of ' + p.targetSol + ' SOL.' +
           (owner && held[i] != null ? ' You hold ' + Number(held[i]).toLocaleString() + ' ' + esc(t.symbol) + '.' : '') + '</p>' : '') +
         (onCurve ? '<div class="trade"><div class="field"><label for="buy-' + i + '">Buy, amount in SOL</label><input id="buy-' + i + '" type="number" min="0" step="any" value="0.1"></div><button class="btn" data-buy="' + i + '" data-mint="' + esc(t.mint) + '">Buy</button>' +
           '<div class="field"><label for="sell-' + i + '">Sell, amount in ' + esc(t.symbol) + '</label><input id="sell-' + i + '" type="number" min="0" step="any"></div><button class="btn ghost" data-sell="' + i + '" data-mint="' + esc(t.mint) + '">Sell</button></div>'

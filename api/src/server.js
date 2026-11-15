@@ -128,10 +128,26 @@ async function describe(mintStr) {
     raisedSol: fromUnits(poolInfo.realB, 9),
     targetSol: fromUnits(poolInfo.totalFundRaisingB, 9),
     soldTokens: fromUnits(poolInfo.realA, poolInfo.mintDecimalsA),
-    unclaimedPlatformFeeSol: fromUnits(poolInfo.platformFee, 9),
     price,
     platformId: poolInfo.platformId.toBase58(),
   }
+}
+
+/** The platform's fee rate and the SOL sitting in its fee vault. Trading fees go straight to this vault. */
+async function platformStatus() {
+  const id = platformId()
+  if (!id) return null
+  const key = new PublicKey(id)
+  const out = { feePercent: null, claimableSol: 0 }
+  const account = await connection.getAccountInfo(key)
+  if (account) out.feePercent = Number(PlatformConfig.decode(account.data).feeRate.toString()) / 10000
+  const vault = PublicKey.findProgramAddressSync([key.toBuffer(), NATIVE_MINT.toBuffer()], PROGRAM)[0]
+  try {
+    out.claimableSol = Number((await connection.getTokenAccountBalance(vault)).value.uiAmountString)
+  } catch (e) {
+    /* the vault account does not exist until the first fee arrives */
+  }
+  return out
 }
 
 const publicUrl = (req) => (process.env.PUBLIC_URL || req.protocol + '://' + req.get('host')).replace(/\/$/, '')
@@ -163,7 +179,13 @@ app.get('/health', (req, res) => res.json({ ok: true }))
 app.get(
   '/config',
   route(async (req, res) => {
-    res.json({ cluster: 'devnet', programId: PROGRAM.toBase58(), platformId: platformId(), platformFromEnv: Boolean(process.env.PLATFORM_ID) })
+    let platform = null
+    try {
+      platform = await platformStatus()
+    } catch (e) {
+      console.error('platform status:', e.message)
+    }
+    res.json({ cluster: 'devnet', programId: PROGRAM.toBase58(), platformId: platformId(), platformFromEnv: Boolean(process.env.PLATFORM_ID), platform })
   })
 )
 
@@ -368,6 +390,8 @@ app.post(
     const platform = platformId()
     need(platform, 'No platform is registered yet.')
     const owner = pubkey(req.body.owner, 'Owner')
+    const status = await platformStatus()
+    need(status.claimableSol > 0, 'There are no platform fees to claim yet. Fees build up as people buy and sell.')
     const raydium = await sdkFor(owner)
     const { transaction } = await raydium.launchpad.claimVaultPlatformFee({
       programId: PROGRAM,
