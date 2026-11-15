@@ -49,7 +49,10 @@ jobs:
           solana config set --url "$RPC_URL" >/dev/null
           BAL=$(solana balance "$DEPLOYER" | awk '{print $1}')
           echo "Wallet $DEPLOYER holds $BAL SOL"
+          # First run: deploy rent plus the test. Later runs only need an upgrade buffer and the test.
           MIN=3
+          if solana program show "$(cat .state/burnpad-id.txt)" --url "$RPC_URL" >/dev/null 2>&1; then MIN=1.7; fi
+          echo "Needs at least $MIN SOL"
           if awk "BEGIN{exit !($BAL < $MIN)}"; then
             solana airdrop 2 "$DEPLOYER" || true
             BAL=$(solana balance "$DEPLOYER" | awk '{print $1}')
