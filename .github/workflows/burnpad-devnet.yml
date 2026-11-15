@@ -52,7 +52,7 @@ jobs:
           # First run: deploy rent plus the test. Later runs only need an upgrade buffer and the test.
           MIN=3
           echo "Program address: $(cat .state/burnpad-id.txt)"
-          if solana program show "$(cat .state/burnpad-id.txt)" --url "$RPC_URL" 2>&1 | tee /tmp/show.txt | grep -q "Program Id"; then MIN=1.7; else cat /tmp/show.txt; fi
+          if solana program show "$(cat .state/burnpad-id.txt)" --keypair .state/deployer.json --url "$RPC_URL" 2>&1 | tee /tmp/show.txt | grep -q "Program Id"; then MIN=1.7; else cat /tmp/show.txt; fi
           echo "Needs at least $MIN SOL"
           if awk "BEGIN{exit !($BAL < $MIN)}"; then
             solana airdrop 2 "$DEPLOYER" || true
