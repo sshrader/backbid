@@ -13,3 +13,8 @@ dist/
 *-keypair.json
 id.json
 api/data/
+
+# Experiment: throwaway keys and build output
+.state/
+experiment/out/
+experiment/pda-claim/Cargo.lock.bak
