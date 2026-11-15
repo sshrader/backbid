@@ -75,7 +75,9 @@ jobs:
       # The old builder bundled with CLI 2.1.21 cannot use newer platform-tools, so install the
       # current standalone builder and call it by full path (the CLI's old copy is first on PATH).
       - name: Install the current program builder
-        run: cargo install cargo-build-sbf --force --locked
+        run: |
+          rm -f "$HOME/.local/share/solana/install/active_release/bin/cargo-build-sbf"
+          cargo install cargo-build-sbf --force --locked
 
       - name: Build the program
         working-directory: experiment/pda-claim
