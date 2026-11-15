@@ -13,10 +13,10 @@ burn vault or the creator stream; those need the on-chain program in
 | Path | What it is |
 | --- | --- |
 | `api/` | A small Node server. It builds Raydium transactions and returns them unsigned for the wallet to sign. It refuses to start unless its RPC is devnet |
-| `web/app.html` | A page that connects a wallet and talks to the API: register a platform, launch, buy, sell, claim fees |
+| `web/index.html` | The site's main page. Connects a wallet and talks to the API: register a platform, launch, buy, sell, claim fees |
 | `web/config.js` | Where the API's address is set for the page |
 
-The simulated prototype (`web/index.html`) is unchanged.
+The simulated prototype is now at `web/prototype.html`.
 
 ## Status: written, not yet run
 
@@ -48,9 +48,7 @@ Use a fresh wallet for testing, not one that holds real funds.
 
 ### 3. Point the page at the API
 
-Open `<your site>/app.html` and paste the API address into step 1 on the page.
-The page remembers it in your browser. To set it for everyone, put the address
-in `web/config.js`.
+Put the API address in `web/config.js`. The site reads it from there.
 
 ### 4. Register your platform
 

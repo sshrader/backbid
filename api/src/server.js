@@ -137,7 +137,15 @@ async function loadPool(raydium, mint) {
   return { poolId, poolInfo, platformInfo: PlatformConfig.decode(account.data) }
 }
 
+const poolCache = new Map() // mint -> { at, data }; a few seconds, so a busy list page does not hammer the RPC
 async function describe(mintStr) {
+  const hit = poolCache.get(mintStr)
+  if (hit && Date.now() - hit.at < 4000) return hit.data
+  const data = await describeFresh(mintStr)
+  poolCache.set(mintStr, { at: Date.now(), data })
+  return data
+}
+async function describeFresh(mintStr) {
   const raydium = await readSdk()
   const { poolId, poolInfo } = await loadPool(raydium, new PublicKey(mintStr))
   let price = null
@@ -157,6 +165,9 @@ async function describe(mintStr) {
     raisedSol: fromUnits(poolInfo.realB, 9),
     targetSol: fromUnits(poolInfo.totalFundRaisingB, 9),
     soldTokens: fromUnits(poolInfo.realA, poolInfo.mintDecimalsA),
+    curveTokens: fromUnits(poolInfo.totalSellA, poolInfo.mintDecimalsA),
+    supply: fromUnits(poolInfo.supply, poolInfo.mintDecimalsA),
+    creator: poolInfo.creator.toBase58(),
     price,
     platformId: poolInfo.platformId.toBase58(),
   }
@@ -273,6 +284,34 @@ app.get(
       out.tokens = accounts.value.reduce((sum, a) => sum + Number(a.account.data.parsed.info.tokenAmount.uiAmountString), 0)
     }
     res.json(out)
+  })
+)
+
+/* Price quote for a curve trade, using the same curve maths the program runs. */
+app.post(
+  '/quote',
+  route(async (req, res) => {
+    const mintA = pubkey(req.body.mint, 'Mint')
+    const raydium = await readSdk()
+    const { poolInfo, platformInfo } = await loadPool(raydium, mintA)
+    need(Number(poolInfo.status) === 0, 'This token has left the bonding curve.')
+    const common = {
+      poolInfo,
+      protocolFeeRate: poolInfo.configInfo.tradeFeeRate,
+      platformFeeRate: platformInfo.feeRate,
+      curveType: poolInfo.configInfo.curveType,
+      shareFeeRate: new BN(0),
+      creatorFeeRate: platformInfo.creatorFeeRate,
+      transferFeeConfigA: undefined,
+      transferFeeConfigB: undefined,
+      slot: await connection.getSlot(),
+    }
+    if (req.body.side === 'sell') {
+      const r = Curve.sellExactIn({ ...common, amountA: parseUnits(req.body.amount, TOKEN_DECIMALS, 'Amount') })
+      return res.json({ side: 'sell', sol: fromUnits(r.amountB, 9) })
+    }
+    const r = Curve.buyExactIn({ ...common, amountB: parseUnits(req.body.amount, 9, 'Amount') })
+    res.json({ side: 'buy', tokens: fromUnits(r.amountA.amount.sub(r.amountA.fee || new BN(0)), TOKEN_DECIMALS) })
   })
 )
 
@@ -473,6 +512,7 @@ app.post(
       signatures.push(signature)
     }
 
+    poolCache.clear()
     // Bookkeeping, each checked against the chain and never taken on the caller's word.
     const mint = req.body.mint && store.tokens[req.body.mint]
     if (mint && !mint.confirmed) {

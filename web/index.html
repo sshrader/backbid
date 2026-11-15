@@ -3,553 +3,365 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Burn Vault Launchpad Prototype</title>
+<title>Launchpad on Devnet</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700&family=Instrument+Sans:wght@400;500;600&family=Young+Serif&family=Public+Sans:wght@400;500;600&family=Archivo+Black&family=Archivo:wght@400;500;600&family=Zilla+Slab:wght@500;700&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Zilla+Slab:wght@500;700&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet">
 <style>
-/* Layout idea: a working bench. Left column is the product as a trader sees it;
-   the right rail is the test bench (clock, wallet, parameters). The supply bar with
-   its charred end is the one recurring signature element. */
+/* Blackout: a neutral black, no blue. Warm white ink, sodium-yellow for the one action
+   that matters, orange reserved for burning. Slab headlines over a plain sans.
+   Single dark theme by choice. Layout: left-aligned, one main column, trade box beside detail. */
 :root {
-  --paper: #ECEFED;
-  --surface: #FAFBFA;
-  --ink: #1A201E;
-  --muted: #5C6864;
-  --line: #CDD4D0;
-  --flame: #1746E0;
-  --flame-soft: #E3E9FD;
-  --scorch: #B8520A;
-  --good: #1B7548;
-  --warn: #9A5B00;
-  --bad: #B3261E;
-  --display: "Bricolage Grotesque", "Arial Narrow", system-ui, sans-serif;
-  --body: "Instrument Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
-  --dw: 700;      /* display weight */
-  --track: -0.02em;
-  --r: 10px;      /* panel radius */
-  --rs: 6px;      /* control radius */
-}
-@media (prefers-color-scheme: dark) {
-  :root:not([data-theme="light"]) {
-    --paper: #131719; --surface: #1B2123; --ink: #E7ECEA; --muted: #98A5A1; --line: #323B3E;
-    --flame: #86A2FF; --flame-soft: #222C4D; --scorch: #F0943A;
-    --good: #5CC08A; --warn: #E0A93A; --bad: #F2776E;
-    color-scheme: dark;
-  }
-}
-:root[data-theme="dark"] {
-  --paper: #131719; --surface: #1B2123; --ink: #E7ECEA; --muted: #98A5A1; --line: #323B3E;
-  --flame: #86A2FF; --flame-soft: #222C4D; --scorch: #F0943A;
-  --good: #5CC08A; --warn: #E0A93A; --bad: #F2776E;
+  --paper: #0B0B0C;
+  --surface: #151516;
+  --raised: #1E1E20;
+  --ink: #F3F0EA;
+  --muted: #9B968D;
+  --line: #2B2A29;
+  --flame: #FFC43D;
+  --flame-soft: #2B2410;
+  --scorch: #FF7A45;
+  --good: #7BD389;
+  --bad: #FF8A80;
+  --display: "Zilla Slab", Rockwell, Georgia, serif;
+  --body: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
   color-scheme: dark;
 }
-
-/* Alternative looks, chosen from the bench. Each commits to one colour world, so it sets every token. */
-:root[data-skin="assay"] {
-  --paper: #E6EDE4; --surface: #F6F9F3; --ink: #11241A; --muted: #55665B; --line: #C3CFC2;
-  --flame: #0B6A45; --flame-soft: #D5E8DA; --scorch: #B8520A; --good: #1B7548; --warn: #8A5A00; --bad: #A62B1F;
-  --display: "Young Serif", Georgia, "Times New Roman", serif; --body: "Public Sans", system-ui, sans-serif;
-  --dw: 400; --track: -0.01em; --r: 3px; --rs: 3px; color-scheme: light;
-}
-:root[data-skin="signal"] {
-  --paper: #F4E542; --surface: #FFF9C4; --ink: #141414; --muted: #4A4718; --line: #A89F2B;
-  --flame: #4A1FD1; --flame-soft: #E4DBFF; --scorch: #C7300A; --good: #0F6B3C; --warn: #7A4A00; --bad: #B0171F;
-  --display: "Archivo Black", Impact, "Arial Black", sans-serif; --body: "Archivo", system-ui, sans-serif;
-  --dw: 400; --track: -0.03em; --r: 0px; --rs: 0px; color-scheme: light;
-}
-:root[data-skin="night"] {
-  --paper: #14183A; --surface: #1C2150; --ink: #EEF0FF; --muted: #A4A9D6; --line: #343A75;
-  --flame: #FFC43D; --flame-soft: #3A3560; --scorch: #FF7A45; --good: #6FD6A0; --warn: #F2B84B; --bad: #FF8A80;
-  --display: "Zilla Slab", Rockwell, Georgia, serif; --body: "IBM Plex Sans", system-ui, sans-serif;
-  --dw: 700; --track: -0.01em; --r: 14px; --rs: 8px; color-scheme: dark;
-}
-:root[data-skin="signal"] .panel, :root[data-skin="signal"] .stats { border-color: var(--ink); border-width: 2px; }
 * { box-sizing: border-box; }
 html, body { margin: 0; }
 body { background: var(--paper); color: var(--ink); font: 400 15px/1.5 var(--body); }
-h1, h2, h3 { font-family: var(--display); font-weight: var(--dw); line-height: 1.1; margin: 0; text-wrap: balance; }
-h1 { font-size: clamp(28px, 4.2vw, 44px); letter-spacing: var(--track); }
-h2 { font-size: 22px; letter-spacing: -0.01em; }
-h3 { font-size: 16px; font-weight: 500; }
-p { margin: 0; }
-a { color: var(--flame); }
+h1, h2, h3 { font-family: var(--display); font-weight: 700; line-height: 1.1; margin: 0; text-wrap: balance; letter-spacing: -0.01em; }
+h1 { font-size: clamp(30px, 4.4vw, 48px); } h2 { font-size: 22px; } h3 { font-size: 17px; font-weight: 500; }
+p { margin: 0; } a { color: var(--flame); }
 button, input, textarea { font: inherit; color: inherit; }
 :focus-visible { outline: 2px solid var(--flame); outline-offset: 2px; }
-.num { font-variant-numeric: tabular-nums; }
-.muted { color: var(--muted); }
-.small { font-size: 13px; }
+.num { font-variant-numeric: tabular-nums; } .muted { color: var(--muted); } .small { font-size: 13px; }
+.mono { font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 13px; overflow-wrap: anywhere; }
 
-.banner { background: var(--ink); color: var(--paper); padding: 8px 20px; font-size: 13px; }
-.top { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 24px; padding: 14px 20px; border-bottom: 1px solid var(--line); background: var(--surface); }
-.mark { font-family: var(--display); font-weight: var(--dw); font-size: 20px; letter-spacing: var(--track); text-decoration: none; color: var(--ink); }
-.mark span { font: 400 12px var(--body); color: var(--muted); margin-left: 6px; letter-spacing: 0; }
-.nav { display: flex; flex-wrap: wrap; gap: 4px; flex: 1; }
-.nav a { padding: 6px 10px; border-radius: var(--rs); text-decoration: none; color: var(--ink); font-weight: 500; }
-.nav a[aria-current="page"] { background: var(--flame-soft); color: var(--flame); }
-.wallet { font-size: 13px; padding: 6px 10px; border: 1px solid var(--line); border-radius: var(--rs); }
+.banner { background: var(--flame); color: #14110A; padding: 7px 20px; font-size: 13px; font-weight: 500; }
+.top { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 24px; padding: 14px 20px; border-bottom: 1px solid var(--line); }
+.mark { font: 700 21px var(--display); text-decoration: none; color: var(--ink); }
+.mark span { font: 400 12px var(--body); color: var(--muted); margin-left: 6px; }
+.nav { display: flex; flex-wrap: wrap; gap: 2px; flex: 1; }
+.nav a { padding: 6px 10px; border-radius: 8px; text-decoration: none; color: var(--muted); font-weight: 500; }
+.nav a:hover { color: var(--ink); }
+.nav a[aria-current="page"] { background: var(--raised); color: var(--ink); }
 
-.shell { display: grid; grid-template-columns: minmax(0, 1fr) 320px; gap: 24px; padding: 24px 20px 48px; max-width: 1280px; margin: 0 auto; align-items: start; }
-@media (max-width: 960px) { .shell { grid-template-columns: minmax(0, 1fr); } }
-main { display: flex; flex-direction: column; gap: 24px; min-width: 0; }
-
-.btn { border: 1px solid var(--ink); background: var(--ink); color: var(--paper); padding: 9px 14px; border-radius: var(--rs); font-weight: 600; cursor: pointer; }
-.btn:hover { filter: brightness(1.15); }
-a.btn { text-decoration: none; display: inline-block; }
-.btn.flame { background: var(--flame); border-color: var(--flame); color: var(--surface); }
-.btn.ghost { background: transparent; color: var(--ink); border-color: var(--line); font-weight: 500; }
-.btn.sm { padding: 5px 9px; font-size: 13px; }
-.btn[disabled] { opacity: .45; cursor: not-allowed; filter: none; }
-.btn.ghost[aria-pressed="true"] { background: var(--ink); color: var(--paper); border-color: var(--ink); }
+main { max-width: 1120px; margin: 0 auto; padding: 28px 20px 64px; display: flex; flex-direction: column; gap: 24px; }
+.btn { border: 1px solid var(--line); background: var(--raised); color: var(--ink); padding: 9px 14px; border-radius: 8px; font-weight: 600; cursor: pointer; text-decoration: none; display: inline-block; }
+.btn:hover { border-color: var(--muted); }
+.btn.flame { background: var(--flame); border-color: var(--flame); color: #14110A; }
+.btn.flame:hover { filter: brightness(1.08); }
+.btn.sm { padding: 5px 10px; font-size: 13px; font-weight: 500; }
+.btn[disabled] { opacity: .4; cursor: not-allowed; filter: none; }
 .row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.between { justify-content: space-between; }
+.stack { display: flex; flex-direction: column; gap: 24px; min-width: 0; }
 
-.panel { background: var(--surface); border: 1px solid var(--line); border-radius: var(--r); padding: 18px; display: flex; flex-direction: column; gap: 14px; min-width: 0; }
-.intro { display: grid; grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr); gap: 28px; align-items: center; }
-@media (max-width: 720px) { .intro { grid-template-columns: minmax(0, 1fr); } }
-.intro p { max-width: 58ch; }
-.intro .lead { display: flex; flex-direction: column; gap: 14px; }
-
-.stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 1px; background: var(--line); border: 1px solid var(--line); border-radius: var(--r); overflow: hidden; }
-.stats div { background: var(--surface); padding: 12px 14px; }
-.stats b { display: block; font: var(--dw) 22px var(--display); }
+.panel { background: var(--surface); border: 1px solid var(--line); border-radius: 14px; padding: 20px; display: flex; flex-direction: column; gap: 14px; min-width: 0; }
+.hero { display: flex; flex-direction: column; gap: 16px; padding: 12px 0 4px; }
+.hero p { max-width: 60ch; color: var(--muted); font-size: 17px; }
+.stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 1px; background: var(--line); border: 1px solid var(--line); border-radius: 14px; overflow: hidden; }
+.stats div { background: var(--surface); padding: 14px 16px; color: var(--muted); }
+.stats b { display: block; font: 700 24px var(--display); color: var(--ink); }
 
 .tabs { display: flex; flex-wrap: wrap; gap: 4px; border-bottom: 1px solid var(--line); }
 .tabs button { background: none; border: 0; border-bottom: 2px solid transparent; padding: 8px 12px; cursor: pointer; font-weight: 500; color: var(--muted); }
 .tabs button[aria-selected="true"] { color: var(--ink); border-bottom-color: var(--flame); }
-
-.list { display: flex; flex-direction: column; }
-.trow { display: grid; grid-template-columns: minmax(150px, 1.4fr) minmax(150px, 1.6fr) repeat(3, minmax(84px, .7fr)); gap: 14px; align-items: center; padding: 12px 6px; border-bottom: 1px solid var(--line); text-decoration: none; color: var(--ink); }
-.trow:hover { background: var(--flame-soft); }
+.trow { display: grid; grid-template-columns: minmax(170px, 1.5fr) minmax(160px, 1.5fr) repeat(2, minmax(90px, .7fr)); gap: 16px; align-items: center; padding: 13px 8px; border-bottom: 1px solid var(--line); text-decoration: none; color: var(--ink); border-radius: 8px; }
+a.trow:hover { background: var(--raised); }
 .trow.head { color: var(--muted); font-size: 13px; padding-block: 6px; }
-.trow.head:hover { background: none; }
-@media (max-width: 720px) { .trow { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); } .trow.head { display: none; } }
-.tok { display: flex; gap: 10px; align-items: center; min-width: 0; }
-.tok b { display: block; overflow-wrap: anywhere; }
-.av { width: 34px; height: 34px; border-radius: 50%; flex: none; display: grid; place-items: center; font: var(--dw) 15px var(--display); color: #fff; }
-.pill { display: inline-block; font-size: 12px; font-weight: 600; padding: 2px 8px; border-radius: 99px; border: 1px solid currentColor; }
-.pill.grad { color: var(--good); }
-.pill.curve { color: var(--flame); }
-.pill.late { color: var(--warn); }
-
-/* Signature: supply bar. Held by traders, still in the curve or pool, and the charred burned end. */
-.supply { display: flex; height: 14px; border-radius: 3px; overflow: hidden; background: var(--line); }
-.supply.big { height: 30px; border-radius: 5px; }
-.supply i { display: block; height: 100%; }
-.supply .held { background: var(--ink); }
-.supply .res { background: var(--line); }
-.supply .burnt { background: repeating-linear-gradient(135deg, var(--scorch) 0 4px, transparent 4px 7px), var(--surface); border-left: 2px solid var(--scorch); }
-.legend { display: flex; flex-wrap: wrap; gap: 4px 16px; font-size: 13px; color: var(--muted); }
-.legend span::before { content: ""; display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 6px; vertical-align: -1px; background: var(--c); }
-.prog { height: 6px; background: var(--line); border-radius: 3px; overflow: hidden; }
+@media (max-width: 700px) { .trow { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); } .trow.head { display: none; } }
+.tok { display: flex; gap: 12px; align-items: center; min-width: 0; } .tok b { display: block; overflow-wrap: anywhere; }
+.av { width: 40px; height: 40px; border-radius: 50%; flex: none; display: grid; place-items: center; font: 700 17px var(--display); background: var(--raised); border: 1px solid var(--line); object-fit: cover; }
+.av.big { width: 64px; height: 64px; font-size: 26px; }
+.pill { display: inline-block; font-size: 12px; font-weight: 600; padding: 2px 9px; border-radius: 99px; border: 1px solid currentColor; }
+.pill.grad { color: var(--good); } .pill.curve { color: var(--flame); } .pill.off { color: var(--muted); }
+.prog { height: 8px; background: var(--raised); border-radius: 4px; overflow: hidden; } .prog.big { height: 14px; border-radius: 7px; }
 .prog i { display: block; height: 100%; background: var(--flame); }
 
-.cols { display: grid; grid-template-columns: minmax(0, 1.25fr) minmax(0, 1fr); gap: 24px; align-items: start; }
-@media (max-width: 1100px) { .cols { grid-template-columns: minmax(0, 1fr); } }
-.stack { display: flex; flex-direction: column; gap: 24px; min-width: 0; }
-.kv { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 6px 16px; }
+.cols { display: grid; grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr); gap: 24px; align-items: start; }
+@media (max-width: 900px) { .cols { grid-template-columns: minmax(0, 1fr); } }
+dl { margin: 0; } .kv { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 7px 16px; }
 .kv dt { color: var(--muted); } .kv dd { margin: 0; text-align: right; font-variant-numeric: tabular-nums; }
-dl { margin: 0; }
-.field { display: flex; flex-direction: column; gap: 4px; }
-.field label { font-size: 13px; font-weight: 500; }
-input[type="text"], input[type="number"], textarea { background: var(--paper); border: 1px solid var(--line); border-radius: var(--rs); padding: 8px 10px; width: 100%; }
-.seg { display: inline-flex; border: 1px solid var(--line); border-radius: var(--rs); overflow: hidden; }
-.seg button { border: 0; background: transparent; padding: 6px 14px; cursor: pointer; font-weight: 500; }
+.field { display: flex; flex-direction: column; gap: 5px; } .field label { font-size: 13px; font-weight: 500; color: var(--muted); }
+input[type="text"], input[type="number"], input[type="url"], input[type="file"], textarea { background: var(--paper); border: 1px solid var(--line); border-radius: 8px; padding: 9px 11px; width: 100%; }
+.seg { display: inline-flex; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; }
+.seg button { border: 0; background: transparent; padding: 6px 16px; cursor: pointer; font-weight: 500; color: var(--muted); }
 .seg button[aria-pressed="true"] { background: var(--ink); color: var(--paper); }
-.quote { background: var(--paper); border-radius: var(--rs); padding: 10px 12px; font-size: 14px; }
-.note { border-left: 3px solid var(--warn); padding: 2px 0 2px 10px; font-size: 13px; color: var(--muted); }
-.note.bad { border-color: var(--bad); color: var(--bad); }
-.note.good { border-color: var(--good); color: var(--good); }
-.msg { padding: 10px 14px; border-radius: var(--rs); background: var(--flame-soft); border: 1px solid var(--flame); }
+.quote { background: var(--paper); border: 1px solid var(--line); border-radius: 8px; padding: 10px 12px; font-size: 14px; min-height: 44px; }
+.note { border-left: 3px solid var(--scorch); padding: 2px 0 2px 12px; font-size: 14px; color: var(--muted); }
+.msg { padding: 11px 14px; border-radius: 8px; background: var(--flame-soft); border: 1px solid var(--flame); overflow-wrap: anywhere; }
 .msg.bad { background: transparent; border-color: var(--bad); color: var(--bad); }
-.log { list-style: none; margin: 0; padding: 0; font-size: 13px; max-height: 240px; overflow: auto; }
-.log li { display: flex; justify-content: space-between; gap: 12px; padding: 5px 0; border-bottom: 1px solid var(--line); }
-.log .burn { color: var(--scorch); font-weight: 600; }
-.spark { width: 100%; height: 64px; display: block; }
-
-.bench { position: sticky; top: 16px; display: flex; flex-direction: column; gap: 16px; }
-@media (max-width: 960px) { .bench { position: static; } }
-.bench .panel { padding: 14px; gap: 10px; }
-.params { display: grid; grid-template-columns: minmax(0, 1fr) 84px; gap: 6px 10px; align-items: center; font-size: 13px; }
-.params input { padding: 4px 6px; text-align: right; }
-.steps { margin: 0; padding-left: 20px; display: flex; flex-direction: column; gap: 10px; max-width: 70ch; }
-@media (prefers-reduced-motion: no-preference) { .supply i, .prog i { transition: width .35s ease; } }
+.msg.good { background: transparent; border-color: var(--good); color: var(--good); }
+.steps { margin: 0; padding-left: 20px; display: flex; flex-direction: column; gap: 10px; max-width: 68ch; }
+@media (prefers-reduced-motion: no-preference) { .prog i { transition: width .4s ease; } }
 </style>
 </head>
 <body>
-<div class="banner">Prototype with simulated data. No wallet connects, no transaction is sent, and every token and balance here is an example.</div>
+<div class="banner">Running on Solana devnet. Tokens and SOL here are test assets with no value.</div>
 <header class="top">
   <a class="mark" href="#tokens">Burnpad<span>working name</span></a>
   <nav class="nav" id="nav" aria-label="Main"></nav>
-  <div class="wallet num" id="wallet"></div>
+  <div class="row" id="wallet"></div>
 </header>
-<div class="shell">
-  <main id="main"></main>
-  <aside class="bench" id="bench" aria-label="Test bench"></aside>
-</div>
+<main>
+  <div id="msg" role="status" aria-live="polite"></div>
+  <div id="view" class="stack"></div>
+</main>
 
+<script src="config.js"></script>
+<script src="https://unpkg.com/@solana/web3.js@1.95.3/lib/index.iife.min.js"></script>
 <script>
-/* ---------- Model ---------- */
-const DEF = { platformFee: 1.25, raydiumFee: 0.25, poolFee: 0.25, splitVault: 50, splitCreator: 25,
-  gradTarget: 85, discount: 7.5, perSale: 2, daily: 10, reserve: 0.1, twapMin: 20, guard: 15, vestDays: 30, expiryDays: 30 };
-const LIMITS = { platformFee: [0, 5], poolFee: [0, 2], splitVault: [0, 100], splitCreator: [0, 100], gradTarget: [20, 85],
-  discount: [0, 50], perSale: [0.1, 100], daily: [0.1, 100], reserve: [0, 5], twapMin: [1, 240], guard: [1, 100], vestDays: [1, 365], expiryDays: [1, 365] };
-const LABELS = { platformFee: 'Platform fee on curve, %', poolFee: 'Pool fee routed after graduation, %', splitVault: 'Share to burn vault, %',
-  splitCreator: 'Share to creator, %', gradTarget: 'Graduation target, SOL', discount: 'Vault bid discount, %', perSale: 'Max per sale, % of vault',
-  daily: 'Daily budget, % of vault', reserve: 'Vault reserve, SOL', twapMin: 'TWAP window, minutes', guard: 'Price guard, %',
-  vestDays: 'Creator vesting, days', expiryDays: 'Creator expiry, days' };
-const V_SOL = 30, V_TOK = 1.073e9, SUPPLY = 1e9, RENT = 0.0389, DAY = 1440;
-let P, S, ui;
-const SKINS = [['foundry', 'Foundry', 'Ash grey and cobalt, with a soft grotesque headline. Follows your light or dark setting.'],
-  ['assay', 'Assay', 'Bottle green with a serif headline and square corners, like an assay office ledger.'],
-  ['signal', 'Signal', 'Hazard yellow and black with a heavy poster headline.'],
-  ['night', 'Night shift', 'Indigo with sodium-yellow accents and a slab headline.']];
-let skin = 'foundry';
-try { const k = localStorage.getItem('skin'); if (SKINS.some(x => x[0] === k)) skin = k; } catch (e) {}
-function applySkin() { if (skin === 'foundry') document.documentElement.removeAttribute('data-skin'); else document.documentElement.setAttribute('data-skin', skin); }
-applySkin();
+const API = (window.API_URL || '').replace(/\/$/, '');
+const $ = (id) => document.getElementById(id);
+const esc = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+const fSol = (x) => (Math.abs(x) >= 100 ? x.toFixed(1) : Math.abs(x) >= 1 ? x.toFixed(2) : x.toFixed(4)) + ' SOL';
+const fTok = (x) => x >= 1e9 ? (x / 1e9).toFixed(2) + 'B' : x >= 1e6 ? (x / 1e6).toFixed(2) + 'M' : x >= 1e3 ? (x / 1e3).toFixed(1) + 'K' : (+x).toFixed(x < 10 && x > 0 ? 2 : 0);
+const fPrice = (x) => x == null ? 'n/a' : (x * 1e6).toFixed(4);
+const short = (a) => a.slice(0, 4) + '…' + a.slice(-4);
+const ago = (ms) => { const m = (Date.now() - ms) / 60000; return m < 1 ? 'just now' : m < 60 ? Math.round(m) + ' min ago' : m < 1440 ? Math.round(m / 60) + ' h ago' : Math.round(m / 1440) + ' d ago'; };
+const explorer = (kind, id) => 'https://explorer.solana.com/' + kind + '/' + encodeURIComponent(id) + '?cluster=devnet';
 
-function rng(seed) { return () => { seed |= 0; seed = seed + 0x6D2B79F5 | 0; let t = Math.imul(seed ^ seed >>> 15, 1 | seed); t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; }; }
+let S = { cfg: null, tokens: [], loaded: false, loadError: null, owner: null, sol: null, held: {}, tab: 'new', side: 'buy', amt: '0.1', busy: false, launch: { name: '', symbol: '', desc: '', first: '', imageUrl: '' } };
+let wallet = null, quoteTimer = null, quoteSeq = 0;
 
-function newToken(name, ticker, desc, hue, ageMin, mine) {
-  return { id: ticker.toLowerCase().replace(/[^a-z0-9]/g, '') + (S.tokens.length + 1), name, ticker, desc, hue, mine: !!mine,
-    created: S.now - ageMin, vSol: V_SOL, vTok: V_TOK, raised: 0, grad: false, gradAt: 0, pSol: 0, pTok: 0,
-    circ: 0, held: 0, burned: 0, vault: 0, winStart: 0, winStartSol: 0, winSpent: 0,
-    cAccrued: 0, cClaimed: 0, expired: false, treasury: 0, ray: 0, fees: 0, twap: V_SOL / V_TOK, hist: [V_SOL / V_TOK], log: [] };
+/* ---------- API and wallet ---------- */
+async function api(path, body) {
+  let res;
+  try { res = await fetch(API + path, body ? { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) } : undefined); }
+  catch (e) { throw new Error('Could not reach the server. Check your connection and try again.'); }
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data.error || 'The server returned an error (' + res.status + ').');
+  return data;
 }
-const spot = t => t.grad ? t.pSol / t.pTok : t.vSol / t.vTok;
-function tick(mins) {
-  const a = 1 - Math.exp(-mins / P.twapMin);
-  for (const t of S.tokens) t.twap += a * (spot(t) - t.twap);
-  S.now += mins;
+function say(html, kind) { $('msg').innerHTML = html ? '<div class="msg ' + (kind || '') + '">' + html + '</div>' : ''; if (html) window.scrollTo({ top: 0, behavior: 'smooth' }); }
+function wallets() {
+  const list = [];
+  if (window.phantom && window.phantom.solana) list.push(['Phantom', window.phantom.solana]);
+  if (window.solflare && window.solflare.isSolflare) list.push(['Solflare', window.solflare]);
+  if (window.backpack && window.backpack.solana) list.push(['Backpack', window.backpack.solana]);
+  return list;
 }
-function feesOn(t, base) {
-  return t.grad ? { plat: base * P.poolFee / 100, ray: 0 } : { plat: base * P.platformFee / 100, ray: base * P.raydiumFee / 100 };
+async function connect(provider, quiet) {
+  try {
+    const r = await provider.connect(quiet ? { onlyIfTrusted: true } : undefined);
+    wallet = provider; S.owner = ((r && r.publicKey) || provider.publicKey).toString();
+    if (!quiet) say('');
+    await refreshMine(); render();
+  } catch (e) { if (!quiet) say('The wallet did not connect: ' + esc(e.message || e), 'bad'); }
 }
-function route(t, f) {
-  let v = f.plat * P.splitVault / 100, c = f.plat * P.splitCreator / 100;
-  const tr = f.plat - v - c;
-  if (t.expired) { v += c; c = 0; }
-  t.vault += v; t.cAccrued += c; t.treasury += tr; S.treasury += tr; t.ray += f.ray; t.fees += f.plat + f.ray;
+function startConnect() {
+  const list = wallets();
+  if (!list.length) return say('No Solana wallet found in this browser. Install Phantom, Solflare or Backpack, then reload this page.', 'bad');
+  if (list.length === 1) return connect(list[0][1]);
+  say('Choose a wallet: ' + list.map((w, i) => '<button class="btn sm" data-act="pick" data-v="' + i + '">' + w[0] + '</button>').join(' '));
 }
-function note(t, text, kind) { t.log.unshift({ at: S.now, text, kind }); if (t.log.length > 40) t.log.pop(); t.hist.push(spot(t)); if (t.hist.length > 160) t.hist.shift(); }
+const fromB64 = (s) => Uint8Array.from(atob(s), (c) => c.charCodeAt(0));
+const toB64 = (bytes) => { let s = ''; bytes.forEach((b) => (s += String.fromCharCode(b))); return btoa(s); };
 
-function quoteBuy(t, solIn) {
-  let f = feesOn(t, solIn), net = solIn - f.plat - f.ray, capped = false;
-  if (!t.grad) {
-    const room = P.gradTarget - t.raised;
-    if (net > room) { solIn *= room / net; f = feesOn(t, solIn); net = room; capped = true; }
-    return { solIn, f, net, out: t.vTok - (t.vSol * t.vTok) / (t.vSol + net), capped };
-  }
-  return { solIn, f, net, out: t.pTok - (t.pSol * t.pTok) / (t.pSol + net), capped };
-}
-function doBuy(t, solIn, who) {
-  const q = quoteBuy(t, solIn);
-  if (!(q.solIn > 0)) return null;
-  if (t.grad) { t.pSol += q.net; t.pTok -= q.out; } else { t.vSol += q.net; t.vTok -= q.out; t.raised += q.net; }
-  t.circ += q.out; route(t, q.f);
-  if (who === 'you') { S.sol -= q.solIn; t.held += q.out; }
-  note(t, (who === 'you' ? 'You bought ' : 'Trader bought ') + fTok(q.out) + ' for ' + fSol(q.solIn));
-  if (!t.grad && t.raised >= P.gradTarget - 1e-9) graduate(t);
-  return q;
-}
-function quoteSell(t, tok) {
-  const gross = t.grad ? t.pSol - (t.pSol * t.pTok) / (t.pTok + tok) : t.vSol - (t.vSol * t.vTok) / (t.vTok + tok);
-  const f = feesOn(t, gross);
-  return { gross, f, net: gross - f.plat - f.ray };
-}
-function doSell(t, tok, who) {
-  const q = quoteSell(t, tok);
-  if (t.grad) { t.pTok += tok; t.pSol -= q.gross; } else { t.vTok += tok; t.vSol -= q.gross; t.raised -= q.gross; }
-  t.circ -= tok; route(t, q.f);
-  if (who === 'you') { S.sol += q.net; t.held -= tok; }
-  note(t, (who === 'you' ? 'You sold ' : 'Trader sold ') + fTok(tok) + ' for ' + fSol(q.net));
-  return q;
-}
-function graduate(t) {
-  const price = spot(t);
-  t.grad = true; t.gradAt = S.now; t.pSol = t.raised; t.pTok = t.raised / price;
-  t.winStart = S.now; t.winStartSol = t.vault; t.winSpent = 0;
-  note(t, 'Graduated to the pool. Burn vault opened with ' + fSol(t.vault), 'burn');
-}
-function vaultWindow(t) {
-  return S.now - t.winStart >= DAY ? { start: S.now, startSol: t.vault, spent: 0 } : { start: t.winStart, startSol: t.winStartSol, spent: t.winSpent };
-}
-function vaultCheck(t, tok) {
-  if (!t.grad) return { ok: false, reason: 'The vault opens when this token graduates.' };
-  const sp = spot(t), gap = Math.abs(sp - t.twap) / t.twap * 100;
-  const bid = Math.min(sp, t.twap) * (1 - P.discount / 100), w = vaultWindow(t);
-  const caps = [['the per-sale cap', t.vault * P.perSale / 100], ['today’s budget', w.startSol * P.daily / 100 - w.spent], ['the SOL reserve', t.vault - P.reserve]];
-  caps.sort((a, b) => a[1] - b[1]);
-  const cap = Math.max(0, caps[0][1]), r = { bid, gap, cap, maxTok: cap / bid, pay: tok * bid, w, binding: caps[0][0] };
-  if (gap > P.guard) return { ...r, ok: false, reason: 'Price guard: spot is ' + gap.toFixed(1) + '% from TWAP, over the ' + P.guard + '% limit. Advance the clock to let TWAP catch up.' };
-  if (cap <= 0) return { ...r, ok: false, reason: 'The vault cannot buy right now because of ' + caps[0][0] + '.' };
-  if (r.pay > cap + 1e-12) return { ...r, ok: false, reason: 'Too large for ' + caps[0][0] + '. The most it can buy now is ' + fTok(r.maxTok) + '.' };
-  return { ...r, ok: tok > 0 };
-}
-function doVaultSell(t, tok) {
-  const c = vaultCheck(t, tok);
-  if (!c.ok) return c;
-  t.winStart = c.w.start; t.winStartSol = c.w.startSol; t.winSpent = c.w.spent + c.pay;
-  t.vault -= c.pay; t.burned += tok; t.circ -= tok; t.held -= tok; S.sol += c.pay;
-  note(t, 'Vault bought and burned ' + fTok(tok) + ' for ' + fSol(c.pay), 'burn');
-  return c;
-}
-function creator(t) {
-  const vested = t.grad ? t.cAccrued * Math.min(1, (S.now - t.gradAt) / (P.vestDays * DAY)) : 0;
-  return { vested, claimable: Math.max(0, vested - t.cClaimed), locked: t.cAccrued - Math.max(vested, t.cClaimed),
-    canExpire: !t.grad && !t.expired && S.now - t.created >= P.expiryDays * DAY };
-}
-function market(t, n, r) {
-  for (let i = 0; i < n; i++) {
-    const others = t.circ - t.held;
-    if (r() < 0.62 || others < 1) { const q = doBuy(t, 0.05 + r() * 1.2, 'other'); if (!q && others >= 1) doSell(t, Math.min(others, 0.5 / spot(t)), 'other'); }
-    else doSell(t, Math.min(others, (0.05 + r() * 0.9) / spot(t)), 'other');
-    tick(1 + Math.floor(r() * 4));
-  }
+/* Ask the server for unsigned transactions, sign in the wallet, hand back to be sent. */
+async function run(label, path, body) {
+  if (S.busy) return null;
+  if (!S.owner) { say('Connect your wallet first.', 'bad'); return null; }
+  S.busy = true;
+  try {
+    say(esc(label) + ': preparing the transaction…');
+    const built = await api(path, { owner: S.owner, ...body });
+    say(esc(label) + ': approve it in your wallet. If no window appears, click the wallet’s icon in your browser toolbar.');
+    const txs = built.transactions.map((b) => solanaWeb3.VersionedTransaction.deserialize(fromB64(b)));
+    const signed = txs.length > 1 ? await wallet.signAllTransactions(txs) : [await wallet.signTransaction(txs[0])];
+    say(esc(label) + ': sending to devnet and waiting for confirmation…');
+    const sent = await api('/tx/send', { transactions: signed.map((t) => toB64(t.serialize())), mint: built.mint, platformId: built.platformId });
+    say(esc(label) + ' confirmed. ' + sent.signatures.map((s) => '<a href="' + explorer('tx', s) + '" rel="noopener">View on Solana Explorer</a>').join(' '), 'good');
+    S.busy = false;
+    await refresh();
+    return built;
+  } catch (e) {
+    say(esc(e && e.message ? e.message : e), 'bad');
+    return null;
+  } finally { S.busy = false; }
 }
 
-function reset() {
-  P = { ...DEF };
-  S = { now: 500000, sol: 50, treasury: 0, tokens: [], msg: null, r: rng(7) };
-  ui = { tab: 'new', side: 'buy', amt: '1', vaultAmt: '', launch: { name: '', ticker: '', desc: '', first: '' } };
-  const seed = [['Kiln Cat', 'KILN', 'A cat that sleeps on the warm side of the kiln.', 18, 5 * DAY, 96, 40],
-    ['Pilot Light', 'PILOT', 'Small, steady, always on.', 212, 2 * DAY, 74, 0], ['Ashfall', 'ASH', 'What is left when the rest is gone.', 268, 360, 31, 0],
-    ['Tinder', 'TNDR', 'Dry, quick to catch.', 142, 40, 9, 0], ['Slag', 'SLAG', 'Launched a month ago and never caught on.', 330, 31 * DAY, 4, 0],
-    ['Flue', 'FLUE', 'Just launched.', 48, 5, 0.6, 0]];
-  for (const [name, ticker, desc, hue, age, raise, after] of seed) {
-    const t = newToken(name, ticker, desc, hue, age); S.tokens.push(t);
-    let left = raise; while (left > 0.01 && !t.grad) { const x = Math.min(left, 0.4 + S.r() * 4); doBuy(t, x, 'other'); left -= x; }
-    const now = S.now; market(t, after, S.r); S.now = now;
-    if (t.grad) { t.gradAt = S.now - 3 * DAY; t.winStart = S.now; t.winStartSol = t.vault; t.winSpent = 0; }
-  }
-  for (const t of S.tokens) { t.twap = spot(t); t.log.forEach((l, i) => l.at = S.now - 3 * (i + 1)); }
-  doBuy(S.tokens[0], 1.5, 'you'); S.tokens[0].twap = spot(S.tokens[0]); S.sol = 50;
+/* ---------- Data ---------- */
+async function refreshMine() {
+  if (!S.owner) return;
+  try {
+    const t = current();
+    const b = await api('/balance?owner=' + encodeURIComponent(S.owner) + (t && t.mint ? '&mint=' + encodeURIComponent(t.mint) : ''));
+    S.sol = b.sol; if (t && t.mint && b.tokens != null) S.held[t.mint] = b.tokens;
+  } catch (e) { /* balance is a convenience */ }
 }
-
-/* ---------- Formatting ---------- */
-const esc = s => String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
-const fSol = x => (Math.abs(x) >= 100 ? x.toFixed(1) : Math.abs(x) >= 1 ? x.toFixed(2) : x.toFixed(4)) + ' SOL';
-const fTok = x => x >= 1e9 ? (x / 1e9).toFixed(2) + 'B' : x >= 1e6 ? (x / 1e6).toFixed(2) + 'M' : x >= 1e3 ? (x / 1e3).toFixed(1) + 'K' : x.toFixed(0);
-const fPrice = x => (x * 1e6).toFixed(3);
-const pct = x => (x >= 10 ? x.toFixed(0) : x >= 1 || x === 0 ? x.toFixed(1) : x.toFixed(3)) + '%';
-const ago = m => m < 60 ? Math.round(m) + ' min' : m < DAY ? (m / 60).toFixed(0) + ' h' : (m / DAY).toFixed(0) + ' d';
-const total = t => t.circ + t.burned + (t.grad ? t.pTok : SUPPLY - t.circ - t.burned);
-const progress = t => t.grad ? 100 : Math.min(100, t.raised / P.gradTarget * 100);
-const av = t => '<span class="av" style="background:hsl(' + t.hue + ' 45% 38%)" aria-hidden="true">' + esc(t.name[0] || '?') + '</span>';
+async function refresh() {
+  try {
+    const [cfg, list] = await Promise.all([api('/config'), api('/tokens')]);
+    S.cfg = cfg; S.tokens = list.tokens; S.loadError = null;
+  } catch (e) { S.loadError = e.message; }
+  S.loaded = true;
+  await refreshMine(); render();
+}
+function current() { const h = location.hash.slice(1); return h.startsWith('t-') ? S.tokens.find((t) => t.mint === h.slice(2)) || { missing: true } : null; }
+const page = () => { const h = location.hash.slice(1) || 'tokens'; return h.startsWith('t-') ? 'tokens' : h; };
+const progress = (t) => !t.pool ? 0 : t.pool.status !== 0 ? 100 : Math.min(100, t.pool.raisedSol / t.pool.targetSol * 100);
+function avatar(t, big) {
+  const cls = 'av' + (big ? ' big' : '');
+  return t.image && t.image.indexOf(API + '/images/') === 0 ? '<img class="' + cls + '" src="' + esc(t.image) + '" alt="">' : '<span class="' + cls + '" aria-hidden="true">' + esc((t.name || '?')[0]) + '</span>';
+}
 function status(t) {
-  if (t.grad) return '<span class="pill grad">Graduated, vault open</span>';
-  if (creator(t).canExpire || t.expired) return '<span class="pill late">On curve, past creator deadline</span>';
-  return '<span class="pill curve">On curve, ' + pct(progress(t)) + '</span>';
-}
-function supplyBar(t, big) {
-  const T = total(t), b = t.burned / T * 100, h = t.circ / T * 100;
-  return '<div class="supply' + (big ? ' big' : '') + '" role="img" aria-label="Supply: ' + pct(h) + ' held by traders, ' + pct(b) + ' burned">' +
-    '<i class="held" style="width:' + h + '%"></i><i class="res" style="flex:1"></i>' + (b > 0 ? '<i class="burnt" style="width:' + Math.max(b, 0.6) + '%"></i>' : '') + '</div>';
-}
-function spark(t) {
-  const h = t.hist, lo = Math.min(...h), hi = Math.max(...h), span = hi - lo || 1;
-  const pts = h.map((v, i) => (h.length < 2 ? 0 : i / (h.length - 1) * 300).toFixed(1) + ',' + (58 - (v - lo) / span * 52).toFixed(1)).join(' ');
-  return '<svg class="spark" viewBox="0 0 300 64" preserveAspectRatio="none" role="img" aria-label="Price over recent trades"><polyline points="' + pts +
-    '" fill="none" stroke="var(--flame)" stroke-width="2" vector-effect="non-scaling-stroke"/></svg>';
+  if (!t.pool) return '<span class="pill off">Not readable right now</span>';
+  return t.pool.status === 0 ? '<span class="pill curve">On curve, ' + progress(t).toFixed(1) + '%</span>' : '<span class="pill grad">Graduated</span>';
 }
 
 /* ---------- Views ---------- */
 function viewTokens() {
-  const tk = S.tokens, feat = tk.slice().sort((a, b) => b.burned / total(b) - a.burned / total(a))[0];
-  const sets = { new: tk.slice().sort((a, b) => b.created - a.created), trending: tk.slice().sort((a, b) => b.fees - a.fees),
-    soon: tk.filter(t => !t.grad && progress(t) >= 50).sort((a, b) => progress(b) - progress(a)), graduated: tk.filter(t => t.grad) };
-  const names = { new: 'New', trending: 'Trending', soon: 'About to graduate', graduated: 'Graduated' };
-  const rows = sets[ui.tab].map(t => '<a class="trow" href="#t-' + t.id + '"><span class="tok">' + av(t) + '<span><b>' + esc(t.name) + '</b><span class="muted small">' + esc(t.ticker) +
-    ', ' + ago(S.now - t.created) + ' old</span></span></span><span>' + status(t) + '<div style="margin-top:6px">' + supplyBar(t) + '</div></span><span class="num">' + fPrice(spot(t)) +
-    '</span><span class="num">' + fSol(t.vault) + '</span><span class="num">' + pct(t.burned / total(t) * 100) + '</span></a>').join('');
-  return '<section class="panel intro"><div class="lead"><h1>Every trade feeds a vault that buys tokens back and burns them.</h1>' +
-    '<p>Half of the platform fee on each trade goes to that token’s burn vault. After the token graduates, holders can sell to the vault at a posted discount, and whatever it buys is destroyed.</p>' +
-    '<div class="row"><a class="btn flame" href="#launch">Launch a token</a><a class="btn ghost" href="#how">How it works</a></div></div>' +
-    '<div class="stack" style="gap:10px"><h3>' + esc(feat.name) + ' supply right now</h3>' + supplyBar(feat, true) +
-    '<div class="legend"><span style="--c:var(--ink)">Held by traders</span><span style="--c:var(--line)">In the curve or pool</span><span style="--c:var(--scorch)">Burned, ' + fTok(feat.burned) + '</span></div>' +
-    '<p class="small muted">Open a graduated token and sell to its vault to watch the burned end grow.</p></div></section>' +
-    '<section class="stats num" aria-label="Totals"><div><b>' + tk.length + '</b>Tokens launched</div><div><b>' + tk.filter(t => t.grad).length + '</b>Graduated</div><div><b>' +
-    fSol(tk.reduce((s, t) => s + t.vault, 0)).replace(' SOL', '') + '</b>SOL in burn vaults</div><div><b>' + fTok(tk.reduce((s, t) => s + t.burned, 0)) + '</b>Tokens burned</div><div><b>' +
-    fSol(tk.reduce((s, t) => s + t.fees, 0)).replace(' SOL', '') + '</b>SOL in fees collected</div></section>' +
-    '<section class="panel"><h2>Tokens</h2><div class="tabs" role="tablist">' + Object.keys(names).map(k => '<button role="tab" aria-selected="' + (ui.tab === k) + '" data-act="tab" data-v="' + k + '">' + names[k] + '</button>').join('') +
-    '</div><div class="list"><div class="trow head"><span>Token</span><span>Status and supply</span><span>Price, SOL per 1M</span><span>Burn vault</span><span>Burned</span></div>' +
-    (rows || '<p class="muted" style="padding:16px 6px">No tokens here yet. Launch one, or buy into a token on the curve to push it toward graduation.</p>') + '</div></section>';
-}
-
-function tradeQuote(t) {
-  const x = parseFloat(ui.amt);
-  if (!(x > 0)) return '<span class="muted">Enter an amount to see a quote.</span>';
-  if (ui.side === 'buy') {
-    if (x > S.sol) return '<span style="color:var(--bad)">You have ' + fSol(S.sol) + '. Enter a smaller amount.</span>';
-    const q = quoteBuy(t, x);
-    return 'You pay <b>' + fSol(q.solIn) + '</b> and receive <b>' + fTok(q.out) + ' ' + esc(t.ticker) + '</b>.<br>Fee ' + fSol(q.f.plat + q.f.ray) +
-      (t.grad ? ' (pool fee)' : ' (' + (P.platformFee + P.raydiumFee) + '%: ' + fSol(q.f.plat * P.splitVault / 100) + ' of it goes to the burn vault)') +
-      (q.capped ? '<br>This buy is trimmed because it fills the curve and graduates the token.' : '');
-  }
-  if (x > t.held + 1e-9) return '<span style="color:var(--bad)">You hold ' + fTok(t.held) + ' ' + esc(t.ticker) + '. Enter a smaller amount.</span>';
-  const q = quoteSell(t, x);
-  return 'You sell <b>' + fTok(x) + ' ' + esc(t.ticker) + '</b> and receive <b>' + fSol(q.net) + '</b>.<br>Fee ' + fSol(q.f.plat + q.f.ray) + '. This sale moves the ' + (t.grad ? 'pool' : 'curve') + ' price down.';
-}
-function vaultQuote(t) {
-  const x = parseFloat(ui.vaultAmt), c = vaultCheck(t, x > 0 ? x : 0);
-  if (!t.grad) return '<span class="muted">' + c.reason + ' It holds ' + fSol(t.vault) + ' so far.</span>';
-  let h = 'Bid <b>' + fPrice(c.bid) + '</b> SOL per 1M. The vault can buy up to <b>' + fTok(c.maxTok) + '</b> right now, limited by ' + c.binding + '.';
-  if (x > t.held + 1e-9) return h + '<br><span style="color:var(--bad)">You hold ' + fTok(t.held) + ' ' + esc(t.ticker) + '.</span>';
-  if (x > 0 && c.ok) h += '<br>You receive <b>' + fSol(c.pay) + '</b> and ' + fTok(x) + ' ' + esc(t.ticker) + ' is burned. The pool price does not move.';
-  else if (c.reason) h += '<br><span style="color:var(--bad)">' + c.reason + '</span>';
-  return h;
+  const tk = S.tokens;
+  const sets = { new: tk.slice().sort((a, b) => b.createdAt - a.createdAt), raised: tk.slice().sort((a, b) => (b.pool ? b.pool.raisedSol : 0) - (a.pool ? a.pool.raisedSol : 0)),
+    soon: tk.filter((t) => t.pool && t.pool.status === 0 && progress(t) >= 50).sort((a, b) => progress(b) - progress(a)), graduated: tk.filter((t) => t.pool && t.pool.status !== 0) };
+  const names = { new: 'New', raised: 'Most raised', soon: 'About to graduate', graduated: 'Graduated' };
+  const empty = { new: 'No tokens yet. Launch the first one.', raised: 'No tokens yet. Launch the first one.', soon: 'No token is past the halfway mark yet.', graduated: 'No token has reached its graduation target yet.' };
+  const rows = sets[S.tab].map((t) => '<a class="trow" href="#t-' + esc(t.mint) + '"><span class="tok">' + avatar(t) + '<span><b>' + esc(t.name) + '</b><span class="muted small">' + esc(t.symbol) + ', ' + ago(t.createdAt) +
+    '</span></span></span><span>' + status(t) + '<div class="prog" style="margin-top:7px"><i style="width:' + progress(t) + '%"></i></div></span><span class="num">' + (t.pool ? fPrice(t.pool.price) : 'n/a') +
+    '</span><span class="num">' + (t.pool ? fSol(t.pool.raisedSol) : 'n/a') + '</span></a>').join('');
+  return '<section class="hero"><h1>Launch a token on Raydium in one transaction.</h1><p>Each token starts on a bonding curve and moves to a Raydium pool with locked liquidity when it reaches its target. A burn vault that buys tokens back and destroys them is in development.</p>' +
+    '<div class="row"><a class="btn flame" href="#launch">Launch a token</a><a class="btn" href="#how">How it works</a></div></section>' +
+    '<section class="stats num" aria-label="Totals"><div><b>' + tk.length + '</b>Tokens launched</div><div><b>' + tk.filter((t) => t.pool && t.pool.status !== 0).length + '</b>Graduated</div><div><b>' +
+    tk.reduce((s, t) => s + (t.pool ? t.pool.raisedSol : 0), 0).toFixed(2) + '</b>SOL on curves</div></section>' +
+    '<section class="panel"><h2>Tokens</h2><div class="tabs" role="tablist">' + Object.keys(names).map((k) => '<button role="tab" aria-selected="' + (S.tab === k) + '" data-act="tab" data-v="' + k + '">' + names[k] + '</button>').join('') + '</div>' +
+    (S.loadError ? '<p class="muted">' + esc(S.loadError) + '</p>' : !S.loaded ? '<p class="muted">Loading tokens…</p>' :
+      '<div><div class="trow head"><span>Token</span><span>Progress to graduation</span><span>Price, SOL per 1M</span><span>Raised</span></div>' + (rows || '<p class="muted" style="padding:16px 8px">' + empty[S.tab] + '</p>') + '</div>') + '</section>';
 }
 function viewToken(t) {
-  const c = creator(t), sp = spot(t), gap = Math.abs(sp - t.twap) / t.twap * 100, w = vaultWindow(t), T = total(t);
-  const left = '<div class="stack"><section class="panel"><div class="row" style="justify-content:space-between"><span class="tok">' + av(t) + '<span><h2>' + esc(t.name) +
-    '</h2><span class="muted">' + esc(t.ticker) + ', launched ' + ago(S.now - t.created) + ' ago' + (t.mine ? ', by you' : '') + '</span></span></span>' + status(t) + '</div>' +
-    (t.desc ? '<p>' + esc(t.desc) + '</p>' : '') + spark(t) +
-    '<dl class="kv"><dt>Price, SOL per 1M tokens</dt><dd>' + fPrice(sp) + '</dd><dt>TWAP over ' + P.twapMin + ' minutes</dt><dd>' + fPrice(t.twap) + ' (' + gap.toFixed(1) + '% gap)</dd>' +
-    (t.grad ? '<dt>Pool liquidity, locked</dt><dd>' + fSol(t.pSol) + '</dd>' : '<dt>Raised toward graduation</dt><dd>' + fSol(t.raised) + ' of ' + P.gradTarget + '</dd>') + '</dl>' +
-    (t.grad ? '' : '<div class="prog"><i style="width:' + progress(t) + '%"></i></div>') + '</section>' +
-    '<section class="panel"><h3>Supply</h3>' + supplyBar(t, true) + '<div class="legend"><span style="--c:var(--ink)">Held by traders, ' + fTok(t.circ) + '</span><span style="--c:var(--line)">' +
-    (t.grad ? 'In the pool' : 'Still in the curve') + ', ' + fTok(T - t.circ - t.burned) + '</span><span style="--c:var(--scorch)">Burned, ' + fTok(t.burned) + ' (' + pct(t.burned / T * 100) + ')</span></div></section>' +
-    '<section class="panel"><h3>Where this token’s fees went</h3><dl class="kv"><dt>Burn vault, holding now</dt><dd>' + fSol(t.vault) + '</dd><dt>Creator stream, total accrued</dt><dd>' + fSol(t.cAccrued) +
-    '</dd><dt>Treasury</dt><dd>' + fSol(t.treasury) + '</dd><dt>Raydium protocol fee</dt><dd>' + fSol(t.ray) + '</dd></dl></section>' +
-    '<section class="panel"><h3>Activity</h3><ul class="log">' + (t.log.map(l => '<li><span class="' + (l.kind || '') + '">' + esc(l.text) + '</span><span class="muted num">' + ago(S.now - l.at) + '</span></li>').join('') ||
-    '<li class="muted">No trades yet.</li>') + '</ul><div class="row"><button class="btn ghost sm" data-act="market" data-v="10">Simulate 10 trades by other people</button>' +
-    '<button class="btn ghost sm" data-act="market" data-v="50">Simulate 50</button></div></section></div>';
-  const right = '<div class="stack"><section class="panel"><div class="row" style="justify-content:space-between"><h3>Trade on the ' + (t.grad ? 'pool' : 'curve') + '</h3><div class="seg">' +
-    '<button aria-pressed="' + (ui.side === 'buy') + '" data-act="side" data-v="buy">Buy</button><button aria-pressed="' + (ui.side === 'sell') + '" data-act="side" data-v="sell">Sell</button></div></div>' +
-    '<div class="field"><label for="trade-amt">' + (ui.side === 'buy' ? 'Amount in SOL' : 'Amount in ' + esc(t.ticker)) + '</label><input type="number" id="trade-amt" min="0" step="any" value="' + esc(ui.amt) + '"></div>' +
-    (ui.side === 'sell' ? '<div class="row"><button class="btn ghost sm" data-act="sellpct" data-v="25">25%</button><button class="btn ghost sm" data-act="sellpct" data-v="50">50%</button><button class="btn ghost sm" data-act="sellpct" data-v="100">All</button><span class="small muted">You hold ' + fTok(t.held) + '</span></div>' : '') +
-    '<div class="quote" id="trade-quote">' + tradeQuote(t) + '</div><button class="btn flame" data-act="trade">' + (ui.side === 'buy' ? 'Buy ' : 'Sell ') + esc(t.ticker) + '</button></section>' +
-    '<section class="panel"><h3>Sell to the burn vault</h3><dl class="kv"><dt>Vault holds</dt><dd>' + fSol(t.vault) + '</dd>' + (t.grad ? '<dt>Spent in this 24-hour window</dt><dd>' + fSol(w.spent) + ' of ' + fSol(w.startSol * P.daily / 100) + '</dd>' : '') + '</dl>' +
-    '<div class="field"><label for="vault-amt">Amount in ' + esc(t.ticker) + '</label><input type="number" id="vault-amt" min="0" step="any" value="' + esc(ui.vaultAmt) + '"' + (t.grad ? '' : ' disabled') + '></div>' +
-    '<div class="row"><button class="btn ghost sm" data-act="vaultmax"' + (t.grad ? '' : ' disabled') + '>Most the vault allows</button><span class="small muted">You hold ' + fTok(t.held) + '</span></div>' +
-    '<div class="quote" id="vault-quote">' + vaultQuote(t) + '</div><button class="btn" data-act="vaultsell"' + (t.grad ? '' : ' disabled') + '>Sell to vault and burn</button></section>' +
-    '<section class="panel"><h3>Creator stream</h3><dl class="kv"><dt>Locked</dt><dd>' + fSol(c.locked) + '</dd><dt>Claimable now</dt><dd>' + fSol(c.claimable) + '</dd><dt>Already claimed</dt><dd>' + fSol(t.cClaimed) + '</dd></dl>' +
-    (t.expired ? '<p class="note bad">Expired. The creator’s share now goes to the burn vault.</p>' : t.grad ? '<p class="note good">Vesting over ' + P.vestDays + ' days from graduation, ' + pct(Math.min(100, (S.now - t.gradAt) / (P.vestDays * DAY) * 100)) + ' done.</p>' :
-      c.canExpire ? '<p class="note bad">Past the ' + P.expiryDays + '-day deadline without graduating. Anyone can expire this stream.</p>' : '<p class="note">Locked until graduation. Expires ' + ago(Math.max(0, P.expiryDays * DAY - (S.now - t.created))) + ' from now if the token has not graduated.</p>') +
-    '<div class="row"><button class="btn ghost sm" data-act="claim"' + (c.claimable > 1e-9 ? '' : ' disabled') + '>Claim as creator</button><button class="btn ghost sm" data-act="expire"' + (c.canExpire ? '' : ' disabled') + '>Expire stream to vault</button></div>' +
-    '<p class="small muted">The prototype lets you act as the creator of any token.</p></section></div>';
+  if (t.missing) return '<p><a href="#tokens">All tokens</a></p><section class="panel"><h2>Token not found</h2><p class="muted">' + (S.loaded ? 'This address is not a token launched here.' : 'Loading…') + '</p></section>';
+  const p = t.pool, live = p && p.status === 0, held = S.held[t.mint], fee = S.cfg && S.cfg.platform && S.cfg.platform.feePercent;
+  const left = '<div class="stack"><section class="panel"><div class="row between"><span class="tok">' + avatar(t, true) + '<span><h2>' + esc(t.name) + '</h2><span class="muted">' + esc(t.symbol) + ', launched ' + ago(t.createdAt) + '</span></span></span>' + status(t) + '</div>' +
+    (t.description ? '<p>' + esc(t.description) + '</p>' : '') +
+    '<div class="row"><span class="mono muted">' + esc(t.mint) + '</span><button class="btn sm" data-act="copy" data-v="' + esc(t.mint) + '">Copy address</button><a class="btn sm" href="' + explorer('address', t.mint) + '" rel="noopener">Solana Explorer</a></div></section>' +
+    (p ? '<section class="panel"><h3>Bonding curve</h3><div class="prog big"><i style="width:' + progress(t) + '%"></i></div><dl class="kv"><dt>Raised toward graduation</dt><dd>' + fSol(p.raisedSol) + ' of ' + p.targetSol + '</dd><dt>Price, SOL per 1M tokens</dt><dd>' + fPrice(p.price) +
+      '</dd><dt>Sold from the curve</dt><dd>' + fTok(p.soldTokens) + ' of ' + fTok(p.curveTokens) + '</dd><dt>Total supply</dt><dd>' + fTok(p.supply) + '</dd><dt>Creator</dt><dd class="mono">' + esc(short(p.creator)) + '</dd></dl></section>' : '') +
+    '<section class="panel"><h3>Burn vault</h3><p class="note">Not live yet. In the full design, part of every trading fee collects in a vault for this token, and after graduation the vault buys tokens from holders and burns them.</p></section></div>';
+  const right = '<div class="stack"><section class="panel">' + (!p ? '<h3>Trade</h3><p class="muted">This token’s pool could not be read just now. Try again in a moment.</p>' :
+    !live ? '<h3>Trade</h3><p class="note">This token has graduated to a Raydium pool. Trading it from this page is not built yet.</p>' :
+    '<div class="row between"><h3>Trade on the curve</h3><div class="seg"><button aria-pressed="' + (S.side === 'buy') + '" data-act="side" data-v="buy">Buy</button><button aria-pressed="' + (S.side === 'sell') + '" data-act="side" data-v="sell">Sell</button></div></div>' +
+    '<div class="field"><label for="amt">' + (S.side === 'buy' ? 'Amount in SOL' : 'Amount in ' + esc(t.symbol)) + '</label><input type="number" id="amt" min="0" step="any" value="' + esc(S.amt) + '"></div>' +
+    (S.side === 'sell' && held ? '<div class="row"><button class="btn sm" data-act="pct" data-v="25">25%</button><button class="btn sm" data-act="pct" data-v="50">50%</button><button class="btn sm" data-act="pct" data-v="100">All</button></div>' : '') +
+    '<div class="quote" id="quote"><span class="muted">Enter an amount to see a quote.</span></div>' +
+    '<button class="btn flame" data-act="trade">' + (S.owner ? (S.side === 'buy' ? 'Buy ' : 'Sell ') + esc(t.symbol) : 'Connect wallet to trade') + '</button>' +
+    '<p class="small muted">' + (S.owner ? 'You hold ' + (held == null ? '0' : fTok(held)) + ' ' + esc(t.symbol) + ' and ' + (S.sol == null ? 'n/a' : fSol(S.sol)) + '.' : '') + ' Trades allow 1% slippage. Fees: ' + (fee == null ? 'platform fee' : fee + '% platform') + ' plus 0.25% Raydium.</p>') +
+    '</section></div>';
   return '<p><a href="#tokens">All tokens</a></p><div class="cols">' + left + right + '</div>';
 }
-
 function launchPreview() {
-  const L = ui.launch, first = parseFloat(L.first) > 0 ? parseFloat(L.first) : 0, cost = RENT + first;
-  return '<span class="tok">' + '<span class="av" style="background:hsl(200 45% 38%)" aria-hidden="true">' + esc((L.name || 'M')[0]) + '</span><span><b>' + esc(L.name || 'My token') + '</b><span class="muted small">' + esc((L.ticker || 'TICKER').toUpperCase()) + '</span></span></span>' +
-    '<p class="small">' + esc(L.desc || 'Your description shows here.') + '</p><dl class="kv small"><dt>Account rent, estimate</dt><dd>' + RENT + ' SOL</dd><dt>First buy</dt><dd>' + (first ? fSol(first) : 'None') +
-    '</dd><dt>Trading fee on it</dt><dd>' + (first ? fSol(first * (P.platformFee + P.raydiumFee) / 100) : 'None') + '</dd><dt>Total you pay</dt><dd><b>' + fSol(cost) + '</b></dd></dl>' +
-    (cost > S.sol ? '<p class="note bad">You have ' + fSol(S.sol) + '. Lower the first buy.</p>' : '');
+  const L = S.launch;
+  return '<span class="tok">' + (L.imageUrl ? '<img class="av big" src="' + esc(L.imageUrl) + '" alt="">' : '<span class="av big" aria-hidden="true">' + esc((L.name || 'M')[0]) + '</span>') + '<span><b>' + esc(L.name || 'My token') + '</b><span class="muted small">' + esc((L.symbol || 'TICKER').toUpperCase()) + '</span></span></span>' +
+    '<p class="small">' + esc(L.desc || 'Your description shows here.') + '</p><dl class="kv small"><dt>First buy</dt><dd>' + (parseFloat(L.first) > 0 ? fSol(parseFloat(L.first)) : 'None') + '</dd><dt>Account rent and network fee</dt><dd>Shown in your wallet</dd></dl>';
 }
 function viewLaunch() {
-  const L = ui.launch, creatorShare = P.splitCreator, treas = 100 - P.splitVault - P.splitCreator;
-  return '<h1>Launch a token</h1><div class="cols"><form class="panel" id="launch-form"><div class="field"><label for="l-name">Name</label><input type="text" id="l-name" maxlength="32" value="' + esc(L.name) + '" required></div>' +
-    '<div class="field"><label for="l-ticker">Ticker</label><input type="text" id="l-ticker" maxlength="10" value="' + esc(L.ticker) + '" required></div>' +
+  const L = S.launch, has = S.cfg && S.cfg.platformId, fee = S.cfg && S.cfg.platform && S.cfg.platform.feePercent;
+  return '<h1>Launch a token</h1>' + (S.loaded && !has ? '<p class="msg bad">The platform is not registered yet. <a href="#platform">Register it first</a>.</p>' : '') +
+    '<div class="cols"><form class="panel" id="launch-form"><div class="field"><label for="l-name">Name</label><input type="text" id="l-name" maxlength="32" value="' + esc(L.name) + '" required></div>' +
+    '<div class="field"><label for="l-symbol">Ticker</label><input type="text" id="l-symbol" maxlength="10" value="' + esc(L.symbol) + '" required></div>' +
     '<div class="field"><label for="l-desc">Description, optional</label><textarea id="l-desc" rows="3" maxlength="500">' + esc(L.desc) + '</textarea></div>' +
+    '<div class="field"><label for="l-image">Image, optional. PNG, JPG, WebP or GIF up to 2 MB</label><input type="file" id="l-image" accept="image/png,image/jpeg,image/webp,image/gif"></div>' +
     '<div class="field"><label for="l-first">First buy in SOL, optional</label><input type="number" id="l-first" min="0" step="any" value="' + esc(L.first) + '"><span class="small muted">You are the first buyer on the curve, in the same transaction.</span></div>' +
-    '<button class="btn flame" type="submit">Launch token</button><p class="small muted">Image upload and links are left out of this prototype.</p></form>' +
+    '<button class="btn flame" type="submit">' + (S.owner ? 'Launch token' : 'Connect wallet to launch') + '</button><p class="small muted">The name, ticker and image are written into the token and cannot be changed later.</p></form>' +
     '<div class="stack"><section class="panel"><h3>Preview</h3><div class="stack" style="gap:12px" id="launch-preview">' + launchPreview() + '</div></section>' +
-    '<section class="panel"><h3>Every trade of this token</h3><dl class="kv"><dt>Platform fee</dt><dd>' + P.platformFee + '%</dd><dt>Raydium protocol fee</dt><dd>' + P.raydiumFee + '%</dd><dt>To this token’s burn vault</dt><dd>' + P.splitVault +
-    '% of the platform fee</dd><dt>To you, locked until graduation</dt><dd>' + creatorShare + '%</dd><dt>To the treasury</dt><dd>' + treas + '%</dd><dt>Graduates to a locked pool at</dt><dd>' + P.gradTarget + ' SOL</dd></dl>' +
-    '<p class="note">Your share vests over ' + P.vestDays + ' days after graduation. If the token has not graduated ' + P.expiryDays + ' days after launch, your share goes to the burn vault.</p></section></div></div>';
+    '<section class="panel"><h3>Every trade of this token</h3><dl class="kv"><dt>Platform fee</dt><dd>' + (fee == null ? 'n/a' : fee + '%') + '</dd><dt>Raydium protocol fee</dt><dd>0.25%</dd><dt>Creator fee</dt><dd>0%</dd><dt>Graduates to a Raydium pool at</dt><dd>85 SOL, liquidity locked</dd></dl></section></div></div>';
 }
-function viewVaults() {
-  const rows = S.tokens.slice().sort((a, b) => b.burned / total(b) - a.burned / total(a) || b.vault - a.vault).map((t, i) => '<a class="trow" href="#t-' + t.id + '"><span class="tok"><span class="num muted" style="width:18px">' + (i + 1) +
-    '</span>' + av(t) + '<span><b>' + esc(t.name) + '</b><span class="muted small">' + esc(t.ticker) + '</span></span></span><span>' + status(t) + '<div style="margin-top:6px">' + supplyBar(t) + '</div></span><span class="num">' +
-    fTok(t.burned) + '</span><span class="num">' + fSol(t.vault) + '</span><span class="num">' + pct(t.burned / total(t) * 100) + '</span></a>').join('');
-  return '<h1>Burn vaults</h1><p style="max-width:65ch">Ranked by the share of supply each vault has burned. A vault collects while its token is on the curve and starts buying at graduation.</p>' +
-    '<section class="panel"><div class="list"><div class="trow head"><span>Token</span><span>Status and supply</span><span>Tokens burned</span><span>Vault holds</span><span>Burned</span></div>' + rows + '</div></section>';
+function viewPlatform() {
+  const c = S.cfg, ps = c && c.platform;
+  if (!S.loaded) return '<h1>Platform</h1><p class="muted">Loading…</p>';
+  if (S.loadError) return '<h1>Platform</h1><p class="msg bad">' + esc(S.loadError) + '</p>';
+  if (!c.platformId) return '<h1>Platform</h1><div class="cols"><form class="panel" id="plat-form"><h3>Register this launchpad on Raydium LaunchLab</h3><div class="field"><label for="p-name">Platform name</label><input type="text" id="p-name" maxlength="60" required></div>' +
+    '<div class="field"><label for="p-web">Website, optional</label><input type="url" id="p-web" placeholder="https://"></div><div class="field"><label for="p-fee">Platform fee, percent per trade</label><input type="number" id="p-fee" min="0" max="5" step="0.05" value="1.25"></div>' +
+    '<button class="btn flame" type="submit">Register platform</button><p class="small muted">A wallet can register one platform. The wallet that signs becomes its admin and receives its fees.</p></form></div>';
+  return '<h1>Platform</h1><div class="cols"><section class="panel"><h3>Registered on devnet</h3><p class="mono">' + esc(c.platformId) + '</p><dl class="kv"><dt>Platform fee per trade</dt><dd>' + (ps && ps.feePercent != null ? ps.feePercent + '%' : 'n/a') +
+    '</dd><dt>Fees ready to claim</dt><dd>' + (ps ? Number(ps.claimableSol).toFixed(6) + ' SOL' : 'n/a') + '</dd></dl><div class="row"><button class="btn flame" data-act="claim"' + (ps && ps.claimableSol > 0 ? '' : ' disabled') + '>Claim platform fees</button>' +
+    '<a class="btn" href="' + explorer('address', c.platformId) + '" rel="noopener">Solana Explorer</a></div><p class="small muted">Only the platform’s fee wallet can claim. Fees arrive as wrapped SOL, shown as a separate token in your wallet.</p></section></div>';
 }
 function viewHow() {
-  return '<h1>How it works</h1><section class="panel"><ol class="steps"><li><b>Launch.</b> One transaction creates the token on a bonding curve along with its burn vault and its creator stream. The fee split is fixed at that moment.</li>' +
-    '<li><b>Trade on the curve.</b> Each trade pays ' + (P.platformFee + P.raydiumFee) + '%. Of the platform’s ' + P.platformFee + '%, ' + P.splitVault + '% goes to the burn vault, ' + P.splitCreator + '% to the creator stream and the rest to the treasury.</li>' +
-    '<li><b>Graduate.</b> At ' + P.gradTarget + ' SOL raised the token moves to a pool with its liquidity locked. The vault opens and creator vesting starts.</li>' +
-    '<li><b>Sell to the vault.</b> The vault bids ' + P.discount + '% below the lower of spot and TWAP. It pays SOL and burns what it buys, within a per-sale cap, a daily budget and a reserve.</li>' +
-    '<li><b>Creator vests.</b> The creator’s share unlocks over ' + P.vestDays + ' days. A token that has not graduated after ' + P.expiryDays + ' days sends that share to the vault.</li></ol></section>' +
-    '<section class="panel"><h2>What this prototype simplifies</h2><ul class="steps" style="padding-left:18px"><li>The curve is a constant-product formula tuned to graduate near 85 SOL. The real curve is Raydium’s.</li>' +
-    '<li>Fees are routed on every trade. On-chain they collect first and anyone harvests them.</li><li>TWAP is a moving average on a simulated clock. Each action advances the clock a few minutes.</li>' +
-    '<li>Parameters on the bench apply to every token at once. On-chain, a token’s split is fixed at launch.</li><li>Creator vesting treats all accrued fees as one balance vesting from graduation.</li></ul></section>' +
-    '<section class="panel"><h2>Risks to state on the real site</h2><p style="max-width:65ch">The vault may be unable to buy when its budget, cap, reserve or price guard is reached. Its bid comes from a formula and is not a price floor or a guarantee. Tokens like these can go to zero.</p></section>';
+  return '<h1>How it works</h1><section class="panel"><ol class="steps"><li><b>Launch.</b> One transaction creates the token on Raydium’s LaunchLab bonding curve. You sign it in your own wallet.</li>' +
+    '<li><b>Trade on the curve.</b> Buys raise the price and sells lower it. Each trade pays the platform fee plus Raydium’s 0.25%.</li>' +
+    '<li><b>Graduate.</b> At 85 SOL raised, Raydium moves the token to a pool and locks its liquidity for good.</li></ol></section>' +
+    '<section class="panel"><h2>In development</h2><p style="max-width:65ch">The burn vault and the creator fee stream are designed but not built. Try the mechanics with made-up numbers in the <a href="prototype.html">simulator</a>.</p></section>' +
+    '<section class="panel"><h2>Risk</h2><p style="max-width:65ch">This is test software on a test network. Tokens like these are highly volatile and can go to zero. Nothing here is financial advice.</p></section>';
 }
 
 /* ---------- Shell ---------- */
-function benchHTML() {
-  return '<section class="panel"><h3>Look</h3><div class="row">' + SKINS.map(k => '<button class="btn ghost sm" aria-pressed="' + (skin === k[0]) + '" data-act="skin" data-v="' + k[0] + '">' + k[1] + '</button>').join('') +
-    '</div><p class="small muted">' + SKINS.find(k => k[0] === skin)[2] + '</p></section><section class="panel"><h3>Clock</h3><p class="small muted">Simulated time. Move it forward to test TWAP, the daily budget, vesting and expiry.</p><div class="row">' +
-    [[20, '20 min'], [DAY, '1 day'], [7 * DAY, '7 days'], [30 * DAY, '30 days']].map(x => '<button class="btn ghost sm" data-act="time" data-v="' + x[0] + '">+' + x[1] + '</button>').join('') +
-    '</div><p class="small num">Day ' + (Math.floor((S.now - 500000) / DAY) + 1) + ', ' + String(Math.floor((S.now % DAY) / 60)).padStart(2, '0') + ':' + String(Math.floor(S.now % 60)).padStart(2, '0') + '</p></section>' +
-    '<section class="panel"><h3>Parameters</h3><div class="params">' + Object.keys(LABELS).map(k => '<label for="p-' + k + '">' + LABELS[k] + '</label><input type="number" id="p-' + k + '" data-param="' + k + '" step="any" value="' + P[k] + '">').join('') +
-    '<span>Treasury share, %</span><span class="num" style="text-align:right">' + (100 - P.splitVault - P.splitCreator) + '</span><span>Raydium fee, %</span><span class="num" style="text-align:right">' + P.raydiumFee + '</span></div>' +
-    '<p class="small muted">Changes apply to every token from the next action.</p></section>' +
-    '<section class="panel"><h3>Treasury</h3><p class="num">' + fSol(S.treasury) + ' collected</p><button class="btn ghost sm" data-act="reset">Reset all example data</button></section>';
-}
-function current() { const h = location.hash.slice(1) || 'tokens'; return h.startsWith('t-') ? S.tokens.find(t => t.id === h.slice(2)) || 'tokens' : h; }
 function render() {
-  const v = current(), page = typeof v === 'object' ? 'tokens' : v;
-  document.getElementById('nav').innerHTML = [['tokens', 'Tokens'], ['vaults', 'Burn vaults'], ['launch', 'Launch a token'], ['how', 'How it works']].map(n => '<a href="#' + n[0] + '"' + (page === n[0] ? ' aria-current="page"' : '') + '>' + n[1] + '</a>').join('');
-  document.getElementById('wallet').textContent = 'Example wallet: ' + fSol(S.sol);
-  const body = typeof v === 'object' ? viewToken(v) : v === 'launch' ? viewLaunch() : v === 'vaults' ? viewVaults() : v === 'how' ? viewHow() : viewTokens();
-  document.getElementById('main').innerHTML = (S.msg ? '<div class="msg ' + (S.msg.bad ? 'bad' : '') + '" role="status">' + esc(S.msg.text) + '</div>' : '') + body;
-  document.getElementById('bench').innerHTML = benchHTML();
-  S.msg = null;
+  if (!API) { $('view').innerHTML = '<section class="panel"><h2>Not connected to a server</h2><p class="muted">Set the server address in config.js, then reload.</p></section>'; return; }
+  const t = current(), pg = page();
+  $('nav').innerHTML = [['tokens', 'Tokens'], ['launch', 'Launch'], ['platform', 'Platform'], ['how', 'How it works']].map((n) => '<a href="#' + n[0] + '"' + (pg === n[0] ? ' aria-current="page"' : '') + '>' + n[1] + '</a>').join('') + '<a href="prototype.html">Simulator</a>';
+  $('wallet').innerHTML = S.owner ? '<span class="small num muted">' + (S.sol == null ? '' : fSol(S.sol)) + '</span><span class="btn sm mono" title="' + esc(S.owner) + '">' + esc(short(S.owner)) + '</span>' : '<button class="btn flame sm" data-act="connect">Connect wallet</button>';
+  $('view').innerHTML = t ? viewToken(t) : pg === 'launch' ? viewLaunch() : pg === 'platform' ? viewPlatform() : pg === 'how' ? viewHow() : viewTokens();
+  if (t && !t.missing) quote();
 }
-const say = (text, bad) => { S.msg = { text, bad }; };
+function quote() {
+  const t = current(), box = $('quote');
+  if (!box || !t || !t.pool || t.pool.status !== 0) return;
+  clearTimeout(quoteTimer);
+  const x = parseFloat(S.amt), held = S.held[t.mint] || 0;
+  if (!(x > 0)) { box.innerHTML = '<span class="muted">Enter an amount to see a quote.</span>'; return; }
+  if (S.owner && S.side === 'buy' && S.sol != null && x > S.sol) { box.innerHTML = '<span style="color:var(--bad)">You have ' + fSol(S.sol) + '. Enter a smaller amount.</span>'; return; }
+  if (S.owner && S.side === 'sell' && x > held) { box.innerHTML = '<span style="color:var(--bad)">You hold ' + fTok(held) + ' ' + esc(t.symbol) + '. Enter a smaller amount.</span>'; return; }
+  box.innerHTML = '<span class="muted">Getting a quote…</span>';
+  const seq = ++quoteSeq;
+  quoteTimer = setTimeout(async () => {
+    try {
+      const q = await api('/quote', { mint: t.mint, side: S.side, amount: S.amt });
+      if (seq !== quoteSeq || !$('quote')) return;
+      $('quote').innerHTML = S.side === 'buy' ? 'You pay <b>' + fSol(x) + '</b> and receive about <b>' + fTok(q.tokens) + ' ' + esc(t.symbol) + '</b>, after fees.' : 'You sell <b>' + fTok(x) + ' ' + esc(t.symbol) + '</b> and receive about <b>' + fSol(q.sol) + '</b>, after fees.';
+    } catch (e) { if (seq === quoteSeq && $('quote')) $('quote').innerHTML = '<span style="color:var(--bad)">' + esc(e.message) + '</span>'; }
+  }, 350);
+}
 
-document.addEventListener('click', e => {
+document.addEventListener('click', async (e) => {
   const b = e.target.closest('[data-act]'); if (!b) return;
   const act = b.dataset.act, v = b.dataset.v, t = current();
-  if (act === 'tab') ui.tab = v;
-  else if (act === 'skin') { skin = v; applySkin(); try { localStorage.setItem('skin', v); } catch (e) {} }
-  else if (act === 'side') { ui.side = v; ui.amt = v === 'buy' ? '1' : ''; }
-  else if (act === 'time') { tick(+v); say('Clock moved forward ' + ago(+v) + '.'); }
-  else if (act === 'reset') { reset(); say('Example data and parameters reset.'); }
-  else if (typeof t === 'object') {
-    if (act === 'sellpct') ui.amt = String(Math.floor(t.held * v / 100));
-    else if (act === 'vaultmax') { const c = vaultCheck(t, 0); ui.vaultAmt = String(Math.floor(Math.min(t.held, (c.maxTok || 0) * 0.999))); }
-    else if (act === 'market') { market(t, +v, S.r); say(v + ' simulated trades ran on ' + t.name + '.'); }
-    else if (act === 'trade') {
-      const x = parseFloat(ui.amt);
-      if (!(x > 0)) say('Enter an amount first.', true);
-      else if (ui.side === 'buy') { if (x > S.sol) say('You have ' + fSol(S.sol) + '. Enter a smaller amount.', true); else { const was = t.grad, q = doBuy(t, x, 'you'); tick(1); say('Bought ' + fTok(q.out) + ' ' + t.ticker + '.' + (!was && t.grad ? ' That filled the curve: the token graduated and its burn vault is open.' : '')); } }
-      else if (x > t.held + 1e-9) say('You hold ' + fTok(t.held) + ' ' + t.ticker + '. Enter a smaller amount.', true);
-      else { const q = doSell(t, Math.min(x, t.held), 'you'); tick(1); ui.amt = ''; say('Sold for ' + fSol(q.net) + '.'); }
-    }
-    else if (act === 'vaultsell') {
-      const x = parseFloat(ui.vaultAmt);
-      if (!(x > 0)) say('Enter how many tokens to sell to the vault.', true);
-      else if (x > t.held + 1e-9) say('You hold ' + fTok(t.held) + ' ' + t.ticker + '.', true);
-      else { const c = doVaultSell(t, Math.min(x, t.held)); if (c.ok) { tick(1); ui.vaultAmt = ''; say('Sold to vault for ' + fSol(c.pay) + '. ' + fTok(x) + ' ' + t.ticker + ' burned.'); } else say(c.reason, true); }
-    }
-    else if (act === 'claim') { const c = creator(t); t.cClaimed += c.claimable; S.sol += c.claimable; note(t, 'Creator claimed ' + fSol(c.claimable)); say('Claimed ' + fSol(c.claimable) + ' as creator.'); }
-    else if (act === 'expire') { const amt = t.cAccrued - t.cClaimed; t.vault += amt; t.cAccrued = t.cClaimed; t.expired = true; note(t, 'Creator stream expired. ' + fSol(amt) + ' moved to the burn vault', 'burn'); say('Stream expired. ' + fSol(amt) + ' moved to the burn vault.'); }
+  if (act === 'connect') return startConnect();
+  if (act === 'pick') return connect(wallets()[+v][1]);
+  if (act === 'tab') { S.tab = v; return render(); }
+  if (act === 'side') { S.side = v; S.amt = v === 'buy' ? '0.1' : ''; return render(); }
+  if (act === 'pct' && t) { S.amt = String(Math.floor((S.held[t.mint] || 0) * v / 100 * 1e6) / 1e6); return render(); }
+  if (act === 'copy') { try { await navigator.clipboard.writeText(v); b.textContent = 'Copied'; } catch (err) { b.textContent = 'Copy failed'; } return; }
+  if (act === 'claim') return run('Claim platform fees', '/tx/claim-fees', {});
+  if (act === 'trade' && t) {
+    if (!S.owner) return startConnect();
+    if (!(parseFloat(S.amt) > 0)) return say('Enter an amount first.', 'bad');
+    const ok = await run((S.side === 'buy' ? 'Buy ' : 'Sell ') + t.symbol, S.side === 'buy' ? '/tx/buy' : '/tx/sell', S.side === 'buy' ? { mint: t.mint, sol: S.amt } : { mint: t.mint, tokens: S.amt });
+    if (ok && S.side === 'sell') { S.amt = ''; render(); }
   }
-  render();
 });
-document.addEventListener('input', e => {
-  const id = e.target.id, t = current();
-  if (id === 'trade-amt' && typeof t === 'object') { ui.amt = e.target.value; document.getElementById('trade-quote').innerHTML = tradeQuote(t); }
-  else if (id === 'vault-amt' && typeof t === 'object') { ui.vaultAmt = e.target.value; document.getElementById('vault-quote').innerHTML = vaultQuote(t); }
-  else if (id.startsWith('l-')) { ui.launch[id.slice(2)] = e.target.value; document.getElementById('launch-preview').innerHTML = launchPreview(); }
+document.addEventListener('input', (e) => {
+  const id = e.target.id;
+  if (id === 'amt') { S.amt = e.target.value; quote(); }
+  else if (id === 'l-image') {
+    const f = e.target.files[0];
+    if (S.launch.imageUrl) URL.revokeObjectURL(S.launch.imageUrl);
+    S.launch.imageUrl = f ? URL.createObjectURL(f) : '';
+    $('launch-preview').innerHTML = launchPreview();
+  }
+  else if (id.startsWith('l-')) { S.launch[id.slice(2)] = e.target.value; $('launch-preview').innerHTML = launchPreview(); }
 });
-document.addEventListener('change', e => {
-  const k = e.target.dataset.param; if (!k) return;
-  let x = parseFloat(e.target.value); if (!isFinite(x)) x = DEF[k];
-  x = Math.min(LIMITS[k][1], Math.max(LIMITS[k][0], x));
-  if (k === 'splitVault') P.splitCreator = Math.min(P.splitCreator, 100 - x);
-  if (k === 'splitCreator') x = Math.min(x, 100 - P.splitVault);
-  P[k] = x; say(LABELS[k].replace(/, .*/, '') + ' set to ' + x + '.'); render();
-});
-document.addEventListener('submit', e => {
+document.addEventListener('submit', async (e) => {
   e.preventDefault();
-  const L = ui.launch, first = parseFloat(L.first) > 0 ? parseFloat(L.first) : 0, name = L.name.trim(), ticker = L.ticker.trim().toUpperCase();
-  if (!name || !ticker) { say('Give the token a name and a ticker.', true); return render(); }
-  if (RENT + first > S.sol) { say('You have ' + fSol(S.sol) + '. Lower the first buy.', true); return render(); }
-  const t = newToken(name, ticker, L.desc.trim(), Math.floor(S.r() * 360), 0, true);
-  t.id = 'u' + (S.tokens.length + 1); S.tokens.push(t); S.sol -= RENT;
-  note(t, 'Token launched');
-  if (first) doBuy(t, first, 'you');
-  tick(1); ui.launch = { name: '', ticker: '', desc: '', first: '' }; say(name + ' launched.' + (t.grad ? ' Your first buy filled the curve and it graduated.' : ''));
-  location.hash = 't-' + t.id; render();
+  if (!S.owner) return startConnect();
+  if (e.target.id === 'plat-form') return run('Register platform', '/tx/create-platform', { name: $('p-name').value, web: $('p-web').value, feePercent: $('p-fee').value });
+  if (e.target.id !== 'launch-form') return;
+  const L = S.launch, file = $('l-image').files[0];
+  let imageData = null;
+  if (file) {
+    if (file.size > 2 * 1024 * 1024) return say('The image is larger than 2 MB. Choose a smaller file.', 'bad');
+    try { imageData = await new Promise((res, rej) => { const r = new FileReader(); r.onload = () => res(r.result); r.onerror = () => rej(new Error('The image could not be read.')); r.readAsDataURL(file); }); }
+    catch (err) { return say(esc(err.message), 'bad'); }
+  }
+  const built = await run('Launch ' + L.name, '/tx/launch', { name: L.name, symbol: L.symbol, description: L.desc, imageData, firstBuySol: L.first || null });
+  if (built && built.mint) { S.launch = { name: '', symbol: '', desc: '', first: '', imageUrl: '' }; location.hash = 't-' + built.mint; }
 });
-window.addEventListener('hashchange', () => { ui.side = 'buy'; ui.amt = '1'; ui.vaultAmt = ''; render(); window.scrollTo(0, 0); });
-reset(); render();
+window.addEventListener('hashchange', async () => { S.side = 'buy'; S.amt = '0.1'; render(); await refreshMine(); render(); });
+setInterval(() => { const a = document.activeElement; if (!S.busy && !document.hidden && !(a && /INPUT|TEXTAREA/.test(a.tagName)) && page() !== 'launch') refresh(); }, 20000);
+
+render();
+if (API) { refresh(); const w = wallets(); if (w.length) connect(w[0][1], true); }
 </script>
 </body>
 </html>

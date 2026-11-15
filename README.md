@@ -21,8 +21,9 @@ Design stage, with a simulated prototype and a first devnet integration (launch,
 | `programs/` | On-chain program (Rust, Anchor) |
 | `api/` | Devnet-only server that builds Raydium LaunchLab transactions for wallets to sign |
 | `docs/devnet-setup.md` | Steps to run real launches on Solana devnet |
-| `web/app.html` | Wallet-connected page for devnet: register a platform, launch, buy, sell |
-| `web/` | Web app. `web/index.html` is a self-contained prototype with simulated data: open it in a browser, no build step |
+| `web/index.html` | The live devnet app: connect a wallet, launch, buy, sell, claim platform fees |
+| `web/prototype.html` | Simulator with made-up data, for testing the burn vault design and parameters |
+| `web/` | The website. Static files, no build step |
 
 ## Before mainnet
 
