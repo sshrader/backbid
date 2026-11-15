@@ -33,8 +33,9 @@ jobs:
         run: |
           mkdir -p .state
           [ -f .state/deployer.json ] || solana-keygen new --no-bip39-passphrase --silent --outfile .state/deployer.json
-          [ -f .state/burnpad.json ] || solana-keygen new --no-bip39-passphrase --silent --outfile .state/burnpad.json
-          solana-keygen pubkey .state/burnpad.json > .state/burnpad-id.txt
+          # Milestone 2 changed the account layouts, so it deploys to a new address.
+          [ -f .state/burnpad-m2.json ] || solana-keygen new --no-bip39-passphrase --silent --outfile .state/burnpad-m2.json
+          solana-keygen pubkey .state/burnpad-m2.json > .state/burnpad-id.txt
           echo "DEPLOYER=$(solana-keygen pubkey .state/deployer.json)" >> "$GITHUB_ENV"
 
       - name: Save keys
@@ -44,15 +45,23 @@ jobs:
           path: .state
           key: state-${{ github.run_id }}-keys
 
+      - name: Close the milestone 1 program and take its rent back
+        run: |
+          if [ -f .state/burnpad.json ]; then
+            OLD=$(solana-keygen pubkey .state/burnpad.json)
+            solana program close "$OLD" --bypass-warning --recipient "$DEPLOYER" --keypair .state/deployer.json --url "$RPC_URL" || echo "Nothing to close."
+            mv .state/burnpad.json .state/burnpad-m1-closed.json
+          fi
+
       - name: Check the wallet has devnet SOL
         run: |
           solana config set --url "$RPC_URL" >/dev/null
           BAL=$(solana balance "$DEPLOYER" | awk '{print $1}')
           echo "Wallet $DEPLOYER holds $BAL SOL"
-          # First run: deploy rent plus the test. Later runs only need an upgrade buffer and the test.
-          MIN=3
+          # The test buys up to the lowest graduation target (a few SOL) plus deploy rent, so it needs more than before.
+          MIN=5
           echo "Program address: $(cat .state/burnpad-id.txt)"
-          if solana program show "$(cat .state/burnpad-id.txt)" --keypair .state/deployer.json --url "$RPC_URL" 2>&1 | tee /tmp/show.txt | grep -q "Program Id"; then MIN=1.7; else cat /tmp/show.txt; fi
+          if solana program show "$(cat .state/burnpad-id.txt)" --keypair .state/deployer.json --url "$RPC_URL" 2>&1 | tee /tmp/show.txt | grep -q "Program Id"; then MIN=4; else MIN=5; cat /tmp/show.txt; fi
           echo "Needs at least $MIN SOL"
           if awk "BEGIN{exit !($BAL < $MIN)}"; then
             solana airdrop 2 "$DEPLOYER" || true
@@ -83,7 +92,7 @@ jobs:
       - name: Deploy to devnet
         run: |
           solana program deploy out/burnpad.so \
-            --program-id .state/burnpad.json \
+            --program-id .state/burnpad-m2.json \
             --keypair .state/deployer.json \
             --url "$RPC_URL"
 
@@ -95,9 +104,9 @@ jobs:
         working-directory: programs/burnpad/client
         run: npm install --no-audit --no-fund
 
-      - name: Run the devnet test
+      - name: Run the vault test
         working-directory: programs/burnpad/client
-        run: node devnet-test.mjs 2>&1 | tee "$GITHUB_WORKSPACE/result.txt"
+        run: node devnet-vault-test.mjs 2>&1 | tee "$GITHUB_WORKSPACE/result.txt"
 
       - name: Save state
         uses: actions/cache/save@v4
