@@ -27,3 +27,13 @@ On the MIG test pool it held 3 samples covering 218 minutes (a quiet pool: sampl
 - Use the standalone `cargo-build-sbf` (current version) with `--arch v0`; devnet does not yet accept newer SBPF versions.
 - Deploy with Solana CLI 3.0.x. The CLI bundled builder and old CLI versions fail on current crate versions.
 - The workflow at `.github/workflows/pda-experiment.yml` is a working template.
+
+## Burnpad milestone 1 on devnet (2026-11-15)
+
+Program `4n4LbjhT266eSR58gReHfE1ukjP6aYSij9C4TKhp1rFZ` (115 KB, SBPF v0). Run by `.github/workflows/burnpad-devnet.yml`:
+
+- `create_launch` made a per-token LaunchLab platform whose admin and fee wallet is the program's authority PDA.
+- LaunchLab's create-pool and first buy worked on that platform.
+- `harvest_fees` claimed 0.00625 SOL through the PDA and split it 0.003125 vault / 0.0015625 creator stream / 0.0015625 treasury. Exactly 50/25/25.
+
+Not yet tested on devnet: `mark_graduated`, `claim_creator`, `expire_creator` (need a graduated token and time), the post-graduation fee share, and the burn vault itself (milestone 2).
