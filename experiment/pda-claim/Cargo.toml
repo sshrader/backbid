@@ -2,6 +2,7 @@
 name = "pda-claim"
 version = "0.1.0"
 edition = "2021"
+rust-version = "1.79"
 description = "Devnet experiment: can a program-derived address be a LaunchLab platform's fee wallet?"
 
 [lib]
