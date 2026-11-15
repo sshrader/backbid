@@ -43,9 +43,38 @@ try {
 } catch (e) {
   /* first run */
 }
+const IMAGES = path.join(DATA_DIR, 'images')
 function save() {
   fs.mkdirSync(DATA_DIR, { recursive: true })
-  fs.writeFileSync(STORE, JSON.stringify(store, null, 2))
+  // Write to a temporary file first so a crash mid-write cannot corrupt the store.
+  fs.writeFileSync(STORE + '.tmp', JSON.stringify(store, null, 2))
+  fs.renameSync(STORE + '.tmp', STORE)
+}
+/** Drop launches that were built but never signed, along with any image saved for them. */
+function prune() {
+  const cutoff = Date.now() - 60 * 60 * 1000
+  for (const t of Object.values(store.tokens)) {
+    if (t.confirmed || t.createdAt > cutoff) continue
+    if (t.imageFile) fs.rmSync(path.join(IMAGES, t.imageFile), { force: true })
+    delete store.tokens[t.mint]
+  }
+}
+
+const IMAGE_TYPES = [
+  { ext: 'png', mime: 'image/png', test: (b) => b.subarray(0, 8).equals(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a])) },
+  { ext: 'jpg', mime: 'image/jpeg', test: (b) => b[0] === 0xff && b[1] === 0xd8 && b[2] === 0xff },
+  { ext: 'gif', mime: 'image/gif', test: (b) => b.subarray(0, 4).toString('latin1') === 'GIF8' },
+  { ext: 'webp', mime: 'image/webp', test: (b) => b.subarray(0, 4).toString('latin1') === 'RIFF' && b.subarray(8, 12).toString('latin1') === 'WEBP' },
+]
+/** Decode an uploaded image and check its real type from its first bytes, not from what the browser claims. */
+function readImage(dataUrl) {
+  const m = /^data:image\/[a-z+]+;base64,([A-Za-z0-9+/=]+)$/.exec(String(dataUrl))
+  need(m, 'The image could not be read. Use a PNG, JPG, WebP or GIF file.')
+  const bytes = Buffer.from(m[1], 'base64')
+  need(bytes.length <= 2 * 1024 * 1024, 'The image is larger than 2 MB. Choose a smaller file.')
+  const type = IMAGE_TYPES.find((t) => t.test(bytes))
+  need(type, 'That file is not a PNG, JPG, WebP or GIF image.')
+  return { bytes, ext: type.ext }
 }
 const platformId = () => process.env.PLATFORM_ID || store.platformId || null
 
@@ -167,7 +196,7 @@ const httpUrl = (value, label) => {
 const app = express()
 app.set('trust proxy', true)
 app.use(cors({ origin: process.env.CORS_ORIGIN && process.env.CORS_ORIGIN !== '*' ? process.env.CORS_ORIGIN.split(',') : true }))
-app.use(express.json({ limit: '200kb' }))
+app.use(express.json({ limit: '4mb' })) // room for a 2 MB image sent as base64
 const route = (fn) => (req, res) =>
   fn(req, res).catch((e) => {
     if (!(e instanceof Bad)) console.error(e)
@@ -194,6 +223,16 @@ app.get('/metadata/:file', (req, res) => {
   const t = store.tokens[req.params.file.replace(/\.json$/, '')]
   if (!t) return res.status(404).json({ error: 'Unknown token.' })
   res.json({ name: t.name, symbol: t.symbol, description: t.description, image: t.image, external_url: t.website || undefined })
+})
+
+/* Uploaded token images. Only names this server generated are served. */
+app.get('/images/:file', (req, res) => {
+  const m = /^[1-9A-HJ-NP-Za-km-z]{32,44}\.(png|jpg|gif|webp)$/.exec(req.params.file)
+  const type = m && IMAGE_TYPES.find((t) => t.ext === m[1])
+  const file = path.join(IMAGES, req.params.file)
+  if (!type || !fs.existsSync(file)) return res.status(404).json({ error: 'Unknown image.' })
+  res.set({ 'Content-Type': type.mime, 'X-Content-Type-Options': 'nosniff', 'Cache-Control': 'public, max-age=86400' })
+  fs.createReadStream(file).pipe(res)
 })
 
 app.get(
@@ -282,7 +321,7 @@ app.post(
     const name = text(req.body.name, 32, 'Name', true)
     const symbol = text(req.body.symbol, 10, 'Ticker', true).toUpperCase()
     const description = text(req.body.description, 500, 'Description')
-    const image = httpUrl(req.body.image, 'Image link')
+    const upload = req.body.imageData ? readImage(req.body.imageData) : null
     const website = httpUrl(req.body.website, 'Website')
     const firstBuy = req.body.firstBuySol ? parseUnits(req.body.firstBuySol, 9, 'First buy') : null
 
@@ -316,7 +355,15 @@ app.post(
     })
     for (const tx of transactions) coSign(tx, pair)
 
-    store.tokens[mint] = { mint, name, symbol, description, image, website, creator: owner.toBase58(), createdAt: Date.now(), confirmed: false }
+    let image = '', imageFile = null
+    if (upload) {
+      imageFile = mint + '.' + upload.ext
+      fs.mkdirSync(IMAGES, { recursive: true })
+      fs.writeFileSync(path.join(IMAGES, imageFile), upload.bytes)
+      image = publicUrl(req) + '/images/' + imageFile
+    }
+    prune()
+    store.tokens[mint] = { mint, name, symbol, description, image, imageFile, website, creator: owner.toBase58(), createdAt: Date.now(), confirmed: false }
     save()
     res.json({ mint, transactions: transactions.map(toB64) })
   })

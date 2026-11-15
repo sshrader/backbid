@@ -72,7 +72,7 @@ ol { margin: 0; padding-left: 20px; }
     <form id="launch" class="grid">
       <div class="field"><label for="l-name">Name</label><input id="l-name" maxlength="32" required></div>
       <div class="field"><label for="l-symbol">Ticker</label><input id="l-symbol" maxlength="10" required></div>
-      <div class="field"><label for="l-image">Image link, optional</label><input id="l-image" type="url" placeholder="https://"></div>
+      <div class="field"><label for="l-image">Image, optional. PNG, JPG, WebP or GIF up to 2 MB</label><input id="l-image" type="file" accept="image/png,image/jpeg,image/webp,image/gif"></div>
       <div class="field"><label for="l-first">First buy in SOL, optional</label><input id="l-first" type="number" min="0" step="any"></div>
       <div class="field" style="grid-column:1/-1"><label for="l-desc">Description, optional</label><textarea id="l-desc" rows="2" maxlength="500"></textarea></div>
       <div class="field"><button class="btn flame" type="submit">Launch on devnet</button></div>
@@ -157,7 +157,7 @@ async function loadTokens() {
     const held = owner ? await Promise.all(tokens.map((t) => api('/balance?owner=' + encodeURIComponent(owner) + '&mint=' + encodeURIComponent(t.mint)).then((b) => b.tokens, () => null))) : [];
     $('tokens').innerHTML = tokens.map((t, i) => {
       const p = t.pool, onCurve = p && p.status === 0, pc = p && p.targetSol ? Math.min(100, p.raisedSol / p.targetSol * 100) : 0;
-      return '<div class="tok"><div class="row" style="justify-content:space-between"><b>' + esc(t.name) + ' <span class="muted">' + esc(t.symbol) + '</span></b><span class="small">' +
+      return '<div class="tok"><div class="row" style="justify-content:space-between"><b class="row">' + (/^https:\/\//.test(t.image || '') ? '<img src="' + esc(t.image) + '" alt="" width="36" height="36" style="border-radius:50%;object-fit:cover">' : '') + esc(t.name) + ' <span class="muted">' + esc(t.symbol) + '</span></b><span class="small">' +
         (!p ? 'Pool not readable right now' : onCurve ? 'On the curve, ' + pc.toFixed(1) + '%' : 'Graduated to a Raydium pool') + '</span></div>' +
         '<div class="mono muted">' + esc(t.mint) + '</div>' + (t.description ? '<p>' + esc(t.description) + '</p>' : '') +
         (p ? '<div class="prog"><i style="width:' + pc + '%"></i></div><p class="small num">Raised ' + p.raisedSol.toFixed(4) + ' of ' + p.targetSol + ' SOL.' +
@@ -185,7 +185,14 @@ $('plat-form').addEventListener('submit', (e) => { e.preventDefault(); run('Regi
 $('claim').addEventListener('click', () => run('Claim platform fees', '/tx/claim-fees', {}));
 $('launch').addEventListener('submit', async (e) => {
   e.preventDefault();
-  const ok = await run('Launch ' + $('l-name').value, '/tx/launch', { name: $('l-name').value, symbol: $('l-symbol').value, description: $('l-desc').value, image: $('l-image').value, firstBuySol: $('l-first').value || null });
+  const file = $('l-image').files[0];
+  let imageData = null;
+  if (file) {
+    if (file.size > 2 * 1024 * 1024) { say('The image is larger than 2 MB. Choose a smaller file.', 'bad'); return; }
+    imageData = await new Promise((resolve, reject) => { const r = new FileReader(); r.onload = () => resolve(r.result); r.onerror = () => reject(new Error('The image could not be read.')); r.readAsDataURL(file); }).catch((err) => { say(esc(err.message), 'bad'); return null; });
+    if (!imageData) return;
+  }
+  const ok = await run('Launch ' + $('l-name').value, '/tx/launch', { name: $('l-name').value, symbol: $('l-symbol').value, description: $('l-desc').value, imageData, firstBuySol: $('l-first').value || null });
   if (ok) $('launch').reset();
 });
 $('tokens').addEventListener('click', (e) => {

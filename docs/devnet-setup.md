@@ -70,10 +70,12 @@ the transaction on Solana Explorer.
 
 ## Known limits
 
-- **Token list and metadata are kept in a file.** They are lost when the API
-  redeploys unless you attach a Railway volume and set `DATA_DIR` to it. The
-  tokens themselves stay on devnet either way.
-- **Images are links only.** There is no upload yet.
+- **Token list, metadata and images are kept in files.** Attach a Railway
+  volume to the API service (mount path `/data`) and set `DATA_DIR=/data`, or
+  they are lost on every redeploy. The tokens themselves stay on devnet either
+  way.
+- **Set `PUBLIC_URL`** on the API service to its own address. Token metadata
+  and image links are built from it and are written into each token for good.
 - **Trading stops at graduation.** Once a token moves to its Raydium pool, this
   page cannot trade it. Pool trading comes later.
 - **The platform fee may be capped.** Raydium added a cap on platform fee rates
