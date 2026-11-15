@@ -93,9 +93,9 @@ function pubkey(value, label) {
 /** "1.5" with 9 decimals -> BN(1500000000). Works on strings so no precision is lost. */
 function parseUnits(value, decimals, label) {
   const s = String(value == null ? '' : value).trim()
-  need(/^\d+(\.\d+)?$/.test(s), label + ' must be a positive number.')
+  need(/^(\d+\.?\d*|\.\d+)$/.test(s), label + ' must be a positive number.') // accepts 1, 1., 1.5 and .5
   const [whole, frac = ''] = s.split('.')
-  const bn = new BN(whole + frac.padEnd(decimals, '0').slice(0, decimals))
+  const bn = new BN((whole || '0') + frac.padEnd(decimals, '0').slice(0, decimals))
   need(bn.gtn(0), label + ' must be more than zero.')
   return bn
 }
