@@ -83,7 +83,7 @@ jobs:
         working-directory: experiment/pda-claim
         run: |
           "$HOME/.cargo/bin/cargo-build-sbf" --version
-          "$HOME/.cargo/bin/cargo-build-sbf" --sbf-out-dir "$GITHUB_WORKSPACE/experiment/out"
+          "$HOME/.cargo/bin/cargo-build-sbf" --arch v0 --sbf-out-dir "$GITHUB_WORKSPACE/experiment/out"
 
       - name: Deploy to devnet
         run: |
