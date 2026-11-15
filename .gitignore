@@ -6,8 +6,10 @@ dist/
 .next/
 .env
 .env.*
+!.env.example
 *.log
 .DS_Store
 # never commit keypairs
 *-keypair.json
 id.json
+api/data/

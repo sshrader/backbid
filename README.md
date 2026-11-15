@@ -9,7 +9,7 @@ fee share is locked until graduation and then vested.
 
 ## Status
 
-Design stage. No code yet.
+Design stage, with a simulated prototype and a first devnet integration (launch, buy, sell through Raydium LaunchLab). The burn vault program is not written yet.
 
 ## Layout
 
@@ -19,7 +19,9 @@ Design stage. No code yet.
 | `docs/stranded-vault-options.md` | Options for vault SOL of tokens that never graduate; undecided |
 | `docs/backbid-reference.md` | Reference notes on backbid.fun, the site this design is based on |
 | `programs/` | On-chain program (Rust, Anchor) |
-| `api/` | Server that builds and simulates transactions, stores metadata, runs the fee harvester |
+| `api/` | Devnet-only server that builds Raydium LaunchLab transactions for wallets to sign |
+| `docs/devnet-setup.md` | Steps to run real launches on Solana devnet |
+| `web/app.html` | Wallet-connected page for devnet: register a platform, launch, buy, sell |
 | `web/` | Web app. `web/index.html` is a self-contained prototype with simulated data: open it in a browser, no build step |
 
 ## Before mainnet

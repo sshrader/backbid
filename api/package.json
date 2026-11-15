@@ -1,0 +1,21 @@
+{
+  "name": "launchpad-api",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Devnet-only server that builds Raydium LaunchLab transactions for wallets to sign",
+  "main": "src/server.js",
+  "scripts": {
+    "start": "node src/server.js"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "dependencies": {
+    "@raydium-io/raydium-sdk-v2": "0.2.75-alpha",
+    "@solana/spl-token": "^0.4.6",
+    "@solana/web3.js": "^1.95.3",
+    "bn.js": "^5.2.1",
+    "cors": "^2.8.5",
+    "express": "^4.19.2"
+  }
+}
