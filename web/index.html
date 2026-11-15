@@ -232,21 +232,21 @@ function viewTokens() {
 }
 function viewToken(t) {
   if (t.missing) return '<p><a href="#tokens">All tokens</a></p><section class="panel"><h2>Token not found</h2><p class="muted">' + (S.loaded ? 'This address is not a token launched here.' : 'Loading…') + '</p></section>';
-  const p = t.pool, live = p && p.status === 0, held = S.held[t.mint], fee = S.cfg && S.cfg.platform && S.cfg.platform.feePercent;
+  const p = t.pool, onCurve = p && p.status === 0, onPool = p && p.status === 2 && p.cpmm, live = onCurve || onPool, held = S.held[t.mint], fee = S.cfg && S.cfg.platform && S.cfg.platform.feePercent;
   const left = '<div class="stack"><section class="panel"><div class="row between"><span class="tok">' + avatar(t, true) + '<span><h2>' + esc(t.name) + '</h2><span class="muted">' + esc(t.symbol) + ', launched ' + ago(t.createdAt) + '</span></span></span>' + status(t) + '</div>' +
     (t.description ? '<p>' + esc(t.description) + '</p>' : '') +
     '<div class="row"><span class="mono muted">' + esc(t.mint) + '</span><button class="btn sm" data-act="copy" data-v="' + esc(t.mint) + '">Copy address</button><a class="btn sm" href="' + explorer('address', t.mint) + '" rel="noopener">Solana Explorer</a></div></section>' +
-    (p ? '<section class="panel"><h3>Bonding curve</h3><div class="prog big"><i style="width:' + progress(t) + '%"></i></div><dl class="kv"><dt>Raised toward graduation</dt><dd>' + fSol(p.raisedSol) + ' of ' + p.targetSol + '</dd><dt>Price, SOL per 1M tokens</dt><dd>' + fPrice(p.price) +
-      '</dd><dt>Sold from the curve</dt><dd>' + fTok(p.soldTokens) + ' of ' + fTok(p.curveTokens) + '</dd><dt>Total supply</dt><dd>' + fTok(p.supply) + '</dd><dt>Creator</dt><dd class="mono">' + esc(short(p.creator)) + '</dd></dl></section>' : '') +
+    (p ? '<section class="panel"><h3>' + (p.status === 0 ? 'Bonding curve' : 'Graduated from the curve') + '</h3><div class="prog big"><i style="width:' + progress(t) + '%"></i></div><dl class="kv"><dt>Raised toward graduation</dt><dd>' + fSol(p.raisedSol) + ' of ' + p.targetSol + '</dd><dt>Price, SOL per 1M tokens</dt><dd>' + fPrice(p.price) +
+      '</dd>' + (p.cpmm ? '<dt>Pool liquidity, locked</dt><dd>' + fSol(p.cpmm.solReserve) + ' and ' + fTok(p.cpmm.tokenReserve) + ' tokens</dd>' : '') + '<dt>Sold from the curve</dt><dd>' + fTok(p.soldTokens) + ' of ' + fTok(p.curveTokens) + '</dd><dt>Total supply</dt><dd>' + fTok(p.supply) + '</dd><dt>Creator</dt><dd class="mono">' + esc(short(p.creator)) + '</dd></dl></section>' : '') +
     '<section class="panel"><h3>Burn vault</h3><p class="note">Not live yet. In the full design, part of every trading fee collects in a vault for this token, and after graduation the vault buys tokens from holders and burns them.</p></section></div>';
   const right = '<div class="stack"><section class="panel">' + (!p ? '<h3>Trade</h3><p class="muted">This token’s pool could not be read just now. Try again in a moment.</p>' :
-    !live ? '<h3>Trade</h3><p class="note">' + (p.status === 1 ? 'This token reached its target. Raydium now moves it to a pool, which can take a few minutes. Curve trading has ended.' : 'This token has graduated to a Raydium pool.') + ' Trading it from this page is not built yet.</p>' :
-    '<div class="row between"><h3>Trade on the curve</h3><div class="seg"><button aria-pressed="' + (S.side === 'buy') + '" data-act="side" data-v="buy">Buy</button><button aria-pressed="' + (S.side === 'sell') + '" data-act="side" data-v="sell">Sell</button></div></div>' +
+    !live ? '<h3>Trade</h3><p class="note">' + (p.status === 1 ? 'This token reached its target. Raydium is moving it to a pool, which can take a few minutes. Trading resumes there.' : 'This token has graduated, but its Raydium pool could not be read just now. Try again in a moment.') + '</p>' :
+    '<div class="row between"><h3>' + (onCurve ? 'Trade on the curve' : 'Trade on the Raydium pool') + '</h3><div class="seg"><button aria-pressed="' + (S.side === 'buy') + '" data-act="side" data-v="buy">Buy</button><button aria-pressed="' + (S.side === 'sell') + '" data-act="side" data-v="sell">Sell</button></div></div>' +
     '<div class="field"><label for="amt">' + (S.side === 'buy' ? 'Amount in SOL' : 'Amount in ' + esc(t.symbol)) + '</label><input type="number" id="amt" min="0" step="any" value="' + esc(S.amt) + '"></div>' +
     (S.side === 'sell' && held ? '<div class="row"><button class="btn sm" data-act="pct" data-v="25">25%</button><button class="btn sm" data-act="pct" data-v="50">50%</button><button class="btn sm" data-act="pct" data-v="100">All</button></div>' : '') +
     '<div class="quote" id="quote"><span class="muted">Enter an amount to see a quote.</span></div>' +
     '<button class="btn flame" data-act="trade">' + (S.owner ? (S.side === 'buy' ? 'Buy ' : 'Sell ') + esc(t.symbol) : 'Connect wallet to trade') + '</button>' +
-    '<p class="small muted">' + (S.owner ? 'You hold ' + (held == null ? '0' : fTok(held)) + ' ' + esc(t.symbol) + ' and ' + (S.sol == null ? 'n/a' : fSol(S.sol)) + '.' : '') + ' Trades allow 1% slippage. Fees: ' + (fee == null ? 'platform fee' : fee + '% platform') + ' plus 0.25% Raydium.</p>') +
+    '<p class="small muted">' + (S.owner ? 'You hold ' + (held == null ? '0' : fTok(held)) + ' ' + esc(t.symbol) + ' and ' + (S.sol == null ? 'n/a' : fSol(S.sol)) + '.' : '') + ' Trades allow 1% slippage. ' + (onCurve ? 'Fees: ' + (fee == null ? 'platform fee' : fee + '% platform') + ' plus 0.25% Raydium.' : 'The pool charges its own trading fee, included in the quote.') + '</p>') +
     '</section></div>';
   return '<p><a href="#tokens">All tokens</a></p><div class="cols">' + left + right + '</div>';
 }
@@ -283,7 +283,7 @@ function viewPlatform() {
 function viewHow() {
   return '<h1>How it works</h1><section class="panel"><ol class="steps"><li><b>Launch.</b> One transaction creates the token on Raydium’s LaunchLab bonding curve. You sign it in your own wallet.</li>' +
     '<li><b>Trade on the curve.</b> Buys raise the price and sells lower it. Each trade pays the platform fee plus Raydium’s 0.25%.</li>' +
-    '<li><b>Graduate.</b> At 85 SOL raised, Raydium moves the token to a pool and locks its liquidity for good.</li></ol></section>' +
+    '<li><b>Graduate.</b> At its target, 85 SOL by default, Raydium moves the token to a pool and locks its liquidity for good. Trading continues on that pool from the same page.</li></ol></section>' +
     '<section class="panel"><h2>In development</h2><p style="max-width:65ch">The burn vault and the creator fee stream are designed but not built. Try the mechanics with made-up numbers in the <a href="prototype.html">simulator</a>.</p></section>' +
     '<section class="panel"><h2>Risk</h2><p style="max-width:65ch">This is test software on a test network. Tokens like these are highly volatile and can go to zero. Nothing here is financial advice.</p></section>';
 }
@@ -299,7 +299,7 @@ function render() {
 }
 function quote() {
   const t = current(), box = $('quote');
-  if (!box || !t || !t.pool || t.pool.status !== 0) return;
+  if (!box || !t || !t.pool || !(t.pool.status === 0 || (t.pool.status === 2 && t.pool.cpmm))) return;
   clearTimeout(quoteTimer);
   const x = parseFloat(S.amt), held = S.held[t.mint] || 0;
   if (!(x > 0)) { box.innerHTML = '<span class="muted">Enter an amount to see a quote.</span>'; return; }

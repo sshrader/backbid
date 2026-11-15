@@ -23,11 +23,14 @@ const {
   LaunchpadConfig,
   PlatformConfig,
   Curve,
+  CurveCalculator,
+  FeeOn,
   toTransferFeeConfig,
 } = require('@raydium-io/raydium-sdk-v2')
 
 const DEVNET_GENESIS = 'EtWTRABZaYq6iMfeYKouRu166VU2xqa1wcaWoxPkrZBG'
 const PROGRAM = DEVNET_PROGRAM_ID.LAUNCHPAD_PROGRAM
+const CPMM = DEVNET_PROGRAM_ID.CREATE_CPMM_POOL_PROGRAM // Raydium's pool program, where tokens trade after graduation
 const TOKEN_DECIMALS = 6
 const RPC_URL = process.env.RPC_URL || 'https://api.devnet.solana.com'
 const DATA_DIR = process.env.DATA_DIR || path.join(__dirname, '..', 'data')
@@ -137,6 +140,51 @@ async function loadPool(raydium, mint) {
   return { poolId, poolInfo, platformInfo: PlatformConfig.decode(account.data) }
 }
 
+/* ---------- After graduation: the token's Raydium pool ---------- */
+const WAITING = 'This token reached its target and Raydium is moving it to a pool. Try again in a few minutes.'
+
+/** The pool's address is derived from the platform's pool config and the two mints. The mint order is not ours to choose, so try both. */
+async function findCpmmPool(mint, platformInfo) {
+  const known = store.tokens[mint.toBase58()]
+  if (known && known.cpmmPool) return new PublicKey(known.cpmmPool)
+  const seed = Buffer.from('pool', 'utf8')
+  const candidates = [
+    [mint, NATIVE_MINT],
+    [NATIVE_MINT, mint],
+  ].map(([a, b]) => PublicKey.findProgramAddressSync([seed, platformInfo.cpConfigId.toBuffer(), a.toBuffer(), b.toBuffer()], CPMM)[0])
+  const accounts = await connection.getMultipleAccountsInfo(candidates)
+  const i = accounts.findIndex((a) => a && a.owner.equals(CPMM))
+  need(i >= 0, WAITING)
+  if (known) {
+    known.cpmmPool = candidates[i].toBase58()
+    save()
+  }
+  return candidates[i]
+}
+
+/** Work out a pool swap with the pool program's own maths, as Raydium's swap example does. */
+async function poolSwap(raydium, mint, platformInfo, inputIsSol, inputAmount) {
+  const poolId = await findCpmmPool(mint, platformInfo)
+  const { poolInfo, poolKeys, rpcData } = await raydium.cpmm.getPoolInfoFromRpc(poolId.toBase58())
+  const baseIn = (inputIsSol ? NATIVE_MINT.toBase58() : mint.toBase58()) === poolInfo.mintA.address
+  const swapResult = CurveCalculator.swapBaseInput(
+    inputAmount,
+    baseIn ? rpcData.baseReserve : rpcData.quoteReserve,
+    baseIn ? rpcData.quoteReserve : rpcData.baseReserve,
+    rpcData.configInfo.tradeFeeRate,
+    rpcData.configInfo.creatorFeeRate,
+    rpcData.configInfo.protocolFeeRate,
+    rpcData.configInfo.fundFeeRate,
+    rpcData.feeOn === FeeOn.BothToken || rpcData.feeOn === FeeOn.OnlyTokenB
+  )
+  return { poolId, poolInfo, poolKeys, rpcData, baseIn, swapResult }
+}
+async function poolSwapTx(raydium, mint, platformInfo, inputIsSol, inputAmount) {
+  const { poolInfo, poolKeys, baseIn, swapResult } = await poolSwap(raydium, mint, platformInfo, inputIsSol, inputAmount)
+  const { transaction } = await raydium.cpmm.swap({ poolInfo, poolKeys, inputAmount, swapResult, slippage: 0.01, baseIn, txVersion: TxVersion.V0 })
+  return transaction
+}
+
 const poolCache = new Map() // mint -> { at, data }; a few seconds, so a busy list page does not hammer the RPC
 async function describe(mintStr) {
   const hit = poolCache.get(mintStr)
@@ -147,7 +195,20 @@ async function describe(mintStr) {
 }
 async function describeFresh(mintStr) {
   const raydium = await readSdk()
-  const { poolId, poolInfo } = await loadPool(raydium, new PublicKey(mintStr))
+  const { poolId, poolInfo, platformInfo } = await loadPool(raydium, new PublicKey(mintStr))
+  let cpmm = null
+  if (Number(poolInfo.status) === 2) {
+    try {
+      const id = await findCpmmPool(new PublicKey(mintStr), platformInfo)
+      const { poolInfo: cp, rpcData } = await raydium.cpmm.getPoolInfoFromRpc(id.toBase58())
+      const tokenIsA = cp.mintA.address === mintStr
+      const tokens = fromUnits(tokenIsA ? rpcData.baseReserve : rpcData.quoteReserve, TOKEN_DECIMALS)
+      const sol = fromUnits(tokenIsA ? rpcData.quoteReserve : rpcData.baseReserve, 9)
+      cpmm = { poolId: id.toBase58(), solReserve: sol, tokenReserve: tokens, price: tokens > 0 ? sol / tokens : null }
+    } catch (e) {
+      console.error('cpmm pool read:', e.message)
+    }
+  }
   let price = null
   try {
     price = Curve.getPrice({
@@ -161,14 +222,15 @@ async function describeFresh(mintStr) {
   }
   return {
     poolId: poolId.toBase58(),
-    status: Number(poolInfo.status), // 0 = trading on the curve; anything else = migrating or migrated
+    status: Number(poolInfo.status), // 0 = trading on the curve, 1 = target reached and waiting to move, 2 = moved to a Raydium pool
+    cpmm,
     raisedSol: fromUnits(poolInfo.realB, 9),
     targetSol: fromUnits(poolInfo.totalFundRaisingB, 9),
     soldTokens: fromUnits(poolInfo.realA, poolInfo.mintDecimalsA),
     curveTokens: fromUnits(poolInfo.totalSellA, poolInfo.mintDecimalsA),
     supply: fromUnits(poolInfo.supply, poolInfo.mintDecimalsA),
     creator: poolInfo.creator.toBase58(),
-    price,
+    price: cpmm && cpmm.price != null ? cpmm.price : price,
     platformId: poolInfo.platformId.toBase58(),
   }
 }
@@ -304,7 +366,13 @@ app.post(
     const mintA = pubkey(req.body.mint, 'Mint')
     const raydium = await readSdk()
     const { poolInfo, platformInfo } = await loadPool(raydium, mintA)
-    need(Number(poolInfo.status) === 0, 'This token has left the bonding curve.')
+    if (Number(poolInfo.status) !== 0) {
+      need(Number(poolInfo.status) === 2, WAITING)
+      const selling = req.body.side === 'sell'
+      const amount = parseUnits(req.body.amount, selling ? TOKEN_DECIMALS : 9, 'Amount')
+      const { swapResult } = await poolSwap(raydium, mintA, platformInfo, !selling, amount)
+      return res.json(selling ? { side: 'sell', sol: fromUnits(swapResult.outputAmount, 9) } : { side: 'buy', tokens: fromUnits(swapResult.outputAmount, TOKEN_DECIMALS) })
+    }
     const common = {
       poolInfo,
       protocolFeeRate: poolInfo.configInfo.tradeFeeRate,
@@ -430,7 +498,10 @@ app.post(
     const buyAmount = parseUnits(req.body.sol, 9, 'Amount')
     const raydium = await sdkFor(owner)
     const { poolInfo, platformInfo } = await loadPool(raydium, mintA)
-    need(Number(poolInfo.status) === 0, 'This token has left the bonding curve. It now trades on its Raydium pool.')
+    if (Number(poolInfo.status) !== 0) {
+      need(Number(poolInfo.status) === 2, WAITING)
+      return res.json({ transactions: [toB64(await poolSwapTx(raydium, mintA, platformInfo, true, buyAmount))] })
+    }
     const mintInfo = await raydium.token.getTokenInfo(mintA)
     const mintBInfo = await raydium.token.getTokenInfo(poolInfo.mintB)
     const epoch = (await connection.getEpochInfo()).epoch
@@ -461,7 +532,10 @@ app.post(
     const sellAmount = parseUnits(req.body.tokens, TOKEN_DECIMALS, 'Amount')
     const raydium = await sdkFor(owner)
     const { poolInfo, platformInfo } = await loadPool(raydium, mintA)
-    need(Number(poolInfo.status) === 0, 'This token has left the bonding curve. It now trades on its Raydium pool.')
+    if (Number(poolInfo.status) !== 0) {
+      need(Number(poolInfo.status) === 2, WAITING)
+      return res.json({ transactions: [toB64(await poolSwapTx(raydium, mintA, platformInfo, false, sellAmount))] })
+    }
     const mintInfo = await raydium.token.getTokenInfo(mintA)
     const mintBInfo = await raydium.token.getTokenInfo(poolInfo.mintB)
     const epoch = (await connection.getEpochInfo()).epoch
