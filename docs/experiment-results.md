@@ -37,3 +37,18 @@ Program `4n4LbjhT266eSR58gReHfE1ukjP6aYSij9C4TKhp1rFZ` (115 KB, SBPF v0). Run by
 - `harvest_fees` claimed 0.00625 SOL through the PDA and split it 0.003125 vault / 0.0015625 creator stream / 0.0015625 treasury. Exactly 50/25/25.
 
 Not yet tested on devnet: `mark_graduated`, `claim_creator`, `expire_creator` (need a graduated token and time), the post-graduation fee share, and the burn vault itself (milestone 2).
+
+## Burnpad milestone 2: the burn vault on devnet (2026-11-15)
+
+Program `9maH9DVCxUd4bjfCNnANW673Xt2YMXaWwQr8UEqAi1ZL`. Full path, run by `.github/workflows/burnpad-devnet.yml`:
+
+- Token launched on its own program-owned platform with a 2 SOL graduation target, bought to graduation, migrated by Raydium to a CPMM pool.
+- `mark_graduated` verified the pool on-chain and recorded it.
+- `harvest_fees` filled the vault (0.01269 SOL).
+- `sell_to_vault` priced from the pool's observation history (60 s window on devnet), paid the holder
+  0.000183 SOL for 20,283.33 tokens (about 7.5% under market, as set), burned the tokens, and debited the vault by exactly the amount paid.
+
+Notes:
+- Raydium's `minFundRaisingB` on devnet is 1 lamport, not a usable target. Use an explicit target.
+- Devnet allows a 60 s price window and zero reserve for testing; mainnet bounds (10 min, 0.05 SOL) are enforced by the `mainnet` feature.
+- Still untested live: `claim_creator` (vesting is 30 days), `expire_creator`, a refused sale (guard, caps), pause.
