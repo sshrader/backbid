@@ -16,10 +16,11 @@ Design stage. No code yet.
 | Path | Contents |
 | --- | --- |
 | `docs/program-spec.md` | Program spec: fee flow, lifecycle, accounts, instructions, parameters, invariants |
+| `docs/stranded-vault-options.md` | Options for vault SOL of tokens that never graduate; undecided |
 | `docs/backbid-reference.md` | Reference notes on backbid.fun, the site this design is based on |
 | `programs/` | On-chain program (Rust, Anchor) |
 | `api/` | Server that builds and simulates transactions, stores metadata, runs the fee harvester |
-| `web/` | Web app |
+| `web/` | Web app. `web/index.html` is a self-contained prototype with simulated data: open it in a browser, no build step |
 
 ## Before mainnet
 
