@@ -1,0 +1,113 @@
+name: Burnpad devnet test
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  devnet:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    env:
+      STATE_DIR: ${{ github.workspace }}/.state
+      RPC_URL: https://api.devnet.solana.com
+    steps:
+      - uses: actions/checkout@v4
+
+      # Same throwaway devnet wallet as the earlier experiment. Devnet only.
+      - name: Restore saved keys
+        uses: actions/cache/restore@v4
+        with:
+          path: .state
+          key: state-${{ github.run_id }}
+          restore-keys: state-
+
+      - name: Install Solana CLI
+        run: |
+          sh -c "$(curl -sSfL https://release.anza.xyz/v3.0.12/install)"
+          echo "$HOME/.local/share/solana/install/active_release/bin" >> "$GITHUB_PATH"
+
+      - name: Keys
+        run: |
+          mkdir -p .state
+          [ -f .state/deployer.json ] || solana-keygen new --no-bip39-passphrase --silent --outfile .state/deployer.json
+          [ -f .state/burnpad.json ] || solana-keygen new --no-bip39-passphrase --silent --outfile .state/burnpad.json
+          solana-keygen pubkey .state/burnpad.json > .state/burnpad-id.txt
+          echo "DEPLOYER=$(solana-keygen pubkey .state/deployer.json)" >> "$GITHUB_ENV"
+
+      - name: Save keys
+        uses: actions/cache/save@v4
+        if: always()
+        with:
+          path: .state
+          key: state-${{ github.run_id }}-keys
+
+      - name: Check the wallet has devnet SOL
+        run: |
+          solana config set --url "$RPC_URL" >/dev/null
+          BAL=$(solana balance "$DEPLOYER" | awk '{print $1}')
+          echo "Wallet $DEPLOYER holds $BAL SOL"
+          MIN=3
+          if awk "BEGIN{exit !($BAL < $MIN)}"; then
+            solana airdrop 2 "$DEPLOYER" || true
+            BAL=$(solana balance "$DEPLOYER" | awk '{print $1}')
+          fi
+          if awk "BEGIN{exit !($BAL < $MIN)}"; then
+            {
+              echo "### Top up the test wallet, then run this workflow again"
+              echo ""
+              echo "Send devnet SOL to \`$DEPLOYER\` until it holds at least **$MIN SOL** (it holds $BAL now)."
+            } >> "$GITHUB_STEP_SUMMARY"
+            echo "::error::Top up $DEPLOYER to at least $MIN devnet SOL (now $BAL) and run the workflow again."
+            exit 1
+          fi
+
+      - name: Install the program builder
+        run: |
+          rm -f "$HOME/.local/share/solana/install/active_release/bin/cargo-build-sbf"
+          cargo install cargo-build-sbf --force --locked
+
+      - name: Build the program
+        working-directory: programs/burnpad
+        run: |
+          "$HOME/.cargo/bin/cargo-build-sbf" --arch v0 --sbf-out-dir "$GITHUB_WORKSPACE/out"
+          ls -l "$GITHUB_WORKSPACE/out"
+
+      # Always upgrade, so the deployed program matches the code in this run.
+      - name: Deploy to devnet
+        run: |
+          solana program deploy out/burnpad.so \
+            --program-id .state/burnpad.json \
+            --keypair .state/deployer.json \
+            --url "$RPC_URL"
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Install script dependencies
+        working-directory: programs/burnpad/client
+        run: npm install --no-audit --no-fund
+
+      - name: Run the devnet test
+        working-directory: programs/burnpad/client
+        run: node devnet-test.mjs 2>&1 | tee "$GITHUB_WORKSPACE/result.txt"
+
+      - name: Save state
+        uses: actions/cache/save@v4
+        if: always()
+        with:
+          path: .state
+          key: state-${{ github.run_id }}-final
+
+      - name: Show the result on the run page
+        if: always()
+        run: |
+          {
+            echo "### Burnpad devnet test"
+            echo '```'
+            tail -n 60 result.txt 2>/dev/null || echo "No output."
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
