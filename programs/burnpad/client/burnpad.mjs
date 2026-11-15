@@ -73,7 +73,7 @@ export function ixHarvest(programId, mint, treasury) {
       meta(a.launch, true),
       meta(a.stream, true),
       meta(a.config),
-      meta(a.authority),
+      meta(a.authority, true), // LaunchLab marks its fee wallet writable, so the call into it must too
       meta(a.platform),
       meta(a.feeAuth),
       meta(a.feeVault, true),

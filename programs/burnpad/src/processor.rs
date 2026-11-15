@@ -275,7 +275,7 @@ fn create_launch(program_id: &Pubkey, accounts: &[AccountInfo], data: &[u8]) -> 
 /* ---------- 2: harvest_fees ---------- */
 /// Anyone can call. Claims the token's platform fees and splits them by the recorded split.
 ///
-/// Accounts: launch (w), stream (w), config, authority, platform, LaunchLab fee-vault authority,
+/// Accounts: launch (w), stream (w), config, authority (w), platform, LaunchLab fee-vault authority,
 /// LaunchLab fee vault (w), authority WSOL account (w), WSOL mint, token program, system program,
 /// associated token program, LaunchLab program, vault WSOL account (w), stream WSOL account (w), treasury WSOL account (w).
 fn harvest_fees(program_id: &Pubkey, accounts: &[AccountInfo]) -> ProgramResult {
