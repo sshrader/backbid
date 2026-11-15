@@ -190,6 +190,14 @@ async function platformStatus() {
   return out
 }
 
+/** Raydium's devnet launch config for SOL-quoted curves. It holds the lowest graduation target the program accepts. */
+async function launchConfig() {
+  const configId = getPdaLaunchpadConfigId(PROGRAM, NATIVE_MINT, 0, 0).publicKey
+  const account = await connection.getAccountInfo(configId)
+  need(account, 'Raydium’s devnet launch config was not found.')
+  return { configId, configInfo: LaunchpadConfig.decode(account.data) }
+}
+
 const publicUrl = (req) => (process.env.PUBLIC_URL || req.protocol + '://' + req.get('host')).replace(/\/$/, '')
 const text = (value, max, label, required) => {
   const s = String(value == null ? '' : value).trim()
@@ -220,12 +228,14 @@ app.get(
   '/config',
   route(async (req, res) => {
     let platform = null
+    let minTargetSol = null
     try {
       platform = await platformStatus()
+      minTargetSol = fromUnits((await launchConfig()).configInfo.minFundRaisingB, 9)
     } catch (e) {
-      console.error('platform status:', e.message)
+      console.error('config:', e.message)
     }
-    res.json({ cluster: 'devnet', programId: PROGRAM.toBase58(), platformId: platformId(), platformFromEnv: Boolean(process.env.PLATFORM_ID), platform })
+    res.json({ cluster: 'devnet', programId: PROGRAM.toBase58(), platformId: platformId(), platformFromEnv: Boolean(process.env.PLATFORM_ID), platform, minTargetSol, defaultTargetSol: 85 })
   })
 )
 
@@ -367,10 +377,13 @@ app.post(
     const pair = Keypair.generate()
     const mint = pair.publicKey.toBase58()
     const raydium = await sdkFor(owner)
-    const configId = getPdaLaunchpadConfigId(PROGRAM, NATIVE_MINT, 0, 0).publicKey
-    const configAccount = await connection.getAccountInfo(configId)
-    need(configAccount, 'Raydium’s devnet launch config was not found.')
-    const configInfo = LaunchpadConfig.decode(configAccount.data)
+    const { configId, configInfo } = await launchConfig()
+    // Optional custom graduation target, for devnet testing. Raydium's config sets the floor.
+    const target = req.body.targetSol ? parseUnits(req.body.targetSol, 9, 'Graduation target') : null
+    if (target) {
+      need(target.gte(configInfo.minFundRaisingB), 'Raydium’s lowest graduation target on devnet is ' + fromUnits(configInfo.minFundRaisingB, 9) + ' SOL.')
+      need(target.lte(new BN('85000000000')), 'The graduation target can be at most 85 SOL.')
+    }
     const mintBInfo = await raydium.token.getTokenInfo(configInfo.mintB)
 
     const { transactions } = await raydium.launchpad.createLaunchpad({
@@ -391,6 +404,7 @@ app.post(
       buyAmount: firstBuy || new BN(1),
       createOnly: !firstBuy,
       extraSigners: [pair],
+      ...(target ? { totalFundRaisingB: target } : {}),
     })
     for (const tx of transactions) coSign(tx, pair)
 

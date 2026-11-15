@@ -123,7 +123,7 @@ const short = (a) => a.slice(0, 4) + '…' + a.slice(-4);
 const ago = (ms) => { const m = (Date.now() - ms) / 60000; return m < 1 ? 'just now' : m < 60 ? Math.round(m) + ' min ago' : m < 1440 ? Math.round(m / 60) + ' h ago' : Math.round(m / 1440) + ' d ago'; };
 const explorer = (kind, id) => 'https://explorer.solana.com/' + kind + '/' + encodeURIComponent(id) + '?cluster=devnet';
 
-let S = { cfg: null, tokens: [], loaded: false, loadError: null, owner: null, sol: null, held: {}, tab: 'new', side: 'buy', amt: '0.1', busy: false, launch: { name: '', symbol: '', desc: '', first: '', imageUrl: '' } };
+let S = { cfg: null, tokens: [], loaded: false, loadError: null, owner: null, sol: null, held: {}, tab: 'new', side: 'buy', amt: '0.1', busy: false, launch: { name: '', symbol: '', desc: '', first: '', target: '85', imageUrl: '' } };
 let wallet = null, quoteTimer = null, quoteSeq = 0;
 
 /* ---------- API and wallet ---------- */
@@ -209,7 +209,7 @@ function avatar(t, big) {
 }
 function status(t) {
   if (!t.pool) return '<span class="pill off">Not readable right now</span>';
-  return t.pool.status === 0 ? '<span class="pill curve">On curve, ' + progress(t).toFixed(1) + '%</span>' : '<span class="pill grad">Graduated</span>';
+  return t.pool.status === 0 ? '<span class="pill curve">On curve, ' + progress(t).toFixed(1) + '%</span>' : t.pool.status === 1 ? '<span class="pill grad">Target reached, moving to pool</span>' : '<span class="pill grad">Graduated</span>';
 }
 
 /* ---------- Views ---------- */
@@ -240,7 +240,7 @@ function viewToken(t) {
       '</dd><dt>Sold from the curve</dt><dd>' + fTok(p.soldTokens) + ' of ' + fTok(p.curveTokens) + '</dd><dt>Total supply</dt><dd>' + fTok(p.supply) + '</dd><dt>Creator</dt><dd class="mono">' + esc(short(p.creator)) + '</dd></dl></section>' : '') +
     '<section class="panel"><h3>Burn vault</h3><p class="note">Not live yet. In the full design, part of every trading fee collects in a vault for this token, and after graduation the vault buys tokens from holders and burns them.</p></section></div>';
   const right = '<div class="stack"><section class="panel">' + (!p ? '<h3>Trade</h3><p class="muted">This token’s pool could not be read just now. Try again in a moment.</p>' :
-    !live ? '<h3>Trade</h3><p class="note">This token has graduated to a Raydium pool. Trading it from this page is not built yet.</p>' :
+    !live ? '<h3>Trade</h3><p class="note">' + (p.status === 1 ? 'This token reached its target. Raydium now moves it to a pool, which can take a few minutes. Curve trading has ended.' : 'This token has graduated to a Raydium pool.') + ' Trading it from this page is not built yet.</p>' :
     '<div class="row between"><h3>Trade on the curve</h3><div class="seg"><button aria-pressed="' + (S.side === 'buy') + '" data-act="side" data-v="buy">Buy</button><button aria-pressed="' + (S.side === 'sell') + '" data-act="side" data-v="sell">Sell</button></div></div>' +
     '<div class="field"><label for="amt">' + (S.side === 'buy' ? 'Amount in SOL' : 'Amount in ' + esc(t.symbol)) + '</label><input type="number" id="amt" min="0" step="any" value="' + esc(S.amt) + '"></div>' +
     (S.side === 'sell' && held ? '<div class="row"><button class="btn sm" data-act="pct" data-v="25">25%</button><button class="btn sm" data-act="pct" data-v="50">50%</button><button class="btn sm" data-act="pct" data-v="100">All</button></div>' : '') +
@@ -253,7 +253,7 @@ function viewToken(t) {
 function launchPreview() {
   const L = S.launch;
   return '<span class="tok">' + (L.imageUrl ? '<img class="av big" src="' + esc(L.imageUrl) + '" alt="">' : '<span class="av big" aria-hidden="true">' + esc((L.name || 'M')[0]) + '</span>') + '<span><b>' + esc(L.name || 'My token') + '</b><span class="muted small">' + esc((L.symbol || 'TICKER').toUpperCase()) + '</span></span></span>' +
-    '<p class="small">' + esc(L.desc || 'Your description shows here.') + '</p><dl class="kv small"><dt>First buy</dt><dd>' + (parseFloat(L.first) > 0 ? fSol(parseFloat(L.first)) : 'None') + '</dd><dt>Account rent and network fee</dt><dd>Shown in your wallet</dd></dl>';
+    '<p class="small">' + esc(L.desc || 'Your description shows here.') + '</p><dl class="kv small"><dt>First buy</dt><dd>' + (parseFloat(L.first) > 0 ? fSol(parseFloat(L.first)) : 'None') + '</dd><dt>Graduates at</dt><dd>' + (parseFloat(L.target) > 0 ? parseFloat(L.target) : 85) + ' SOL</dd><dt>Account rent and network fee</dt><dd>Shown in your wallet</dd></dl>';
 }
 function viewLaunch() {
   const L = S.launch, has = S.cfg && S.cfg.platformId, fee = S.cfg && S.cfg.platform && S.cfg.platform.feePercent;
@@ -263,9 +263,11 @@ function viewLaunch() {
     '<div class="field"><label for="l-desc">Description, optional</label><textarea id="l-desc" rows="3" maxlength="500">' + esc(L.desc) + '</textarea></div>' +
     '<div class="field"><label for="l-image">Image, optional. PNG, JPG, WebP or GIF up to 2 MB</label><input type="file" id="l-image" accept="image/png,image/jpeg,image/webp,image/gif"></div>' +
     '<div class="field"><label for="l-first">First buy in SOL, optional</label><input type="number" id="l-first" min="0" step="any" value="' + esc(L.first) + '"><span class="small muted">You are the first buyer on the curve, in the same transaction.</span></div>' +
+    '<div class="field"><label for="l-target">Graduation target in SOL</label><input type="number" id="l-target" min="0" max="85" step="any" value="' + esc(L.target) + '"><span class="small muted">The normal target is 85. For devnet testing you can go lower' +
+    (S.cfg && S.cfg.minTargetSol != null ? ', down to ' + S.cfg.minTargetSol + ' SOL' : '') + ', so a token can graduate with test SOL.</span></div>' +
     '<button class="btn flame" type="submit">' + (S.owner ? 'Launch token' : 'Connect wallet to launch') + '</button><p class="small muted">The name, ticker and image are written into the token and cannot be changed later.</p></form>' +
     '<div class="stack"><section class="panel"><h3>Preview</h3><div class="stack" style="gap:12px" id="launch-preview">' + launchPreview() + '</div></section>' +
-    '<section class="panel"><h3>Every trade of this token</h3><dl class="kv"><dt>Platform fee</dt><dd>' + (fee == null ? 'n/a' : fee + '%') + '</dd><dt>Raydium protocol fee</dt><dd>0.25%</dd><dt>Creator fee</dt><dd>0%</dd><dt>Graduates to a Raydium pool at</dt><dd>85 SOL, liquidity locked</dd></dl></section></div></div>';
+    '<section class="panel"><h3>Every trade of this token</h3><dl class="kv"><dt>Platform fee</dt><dd>' + (fee == null ? 'n/a' : fee + '%') + '</dd><dt>Raydium protocol fee</dt><dd>0.25%</dd><dt>Creator fee</dt><dd>0%</dd><dt>Graduates to a Raydium pool at</dt><dd>85 SOL by default, liquidity locked</dd></dl></section></div></div>';
 }
 function viewPlatform() {
   const c = S.cfg, ps = c && c.platform;
@@ -354,8 +356,8 @@ document.addEventListener('submit', async (e) => {
     try { imageData = await new Promise((res, rej) => { const r = new FileReader(); r.onload = () => res(r.result); r.onerror = () => rej(new Error('The image could not be read.')); r.readAsDataURL(file); }); }
     catch (err) { return say(esc(err.message), 'bad'); }
   }
-  const built = await run('Launch ' + L.name, '/tx/launch', { name: L.name, symbol: L.symbol, description: L.desc, imageData, firstBuySol: L.first || null });
-  if (built && built.mint) { S.launch = { name: '', symbol: '', desc: '', first: '', imageUrl: '' }; location.hash = 't-' + built.mint; }
+  const built = await run('Launch ' + L.name, '/tx/launch', { name: L.name, symbol: L.symbol, description: L.desc, imageData, firstBuySol: L.first || null, targetSol: L.target && parseFloat(L.target) !== 85 ? L.target : null });
+  if (built && built.mint) { S.launch = { name: '', symbol: '', desc: '', first: '', target: '85', imageUrl: '' }; location.hash = 't-' + built.mint; }
 });
 window.addEventListener('hashchange', async () => { S.side = 'buy'; S.amt = '0.1'; render(); await refreshMine(); render(); });
 setInterval(() => { const a = document.activeElement; if (!S.busy && !document.hidden && !(a && /INPUT|TEXTAREA/.test(a.tagName)) && page() !== 'launch') refresh(); }, 20000);
