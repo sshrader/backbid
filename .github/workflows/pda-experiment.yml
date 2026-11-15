@@ -72,22 +72,11 @@ jobs:
             exit 1
           fi
 
-      # The Solana build tools bundle an older Rust (1.79). Resolve library versions with the
-      # runner's newer Cargo, asking it to pick versions that still build on 1.79.
-      - name: Pin library versions compatible with the Solana toolchain
-        working-directory: experiment/pda-claim
-        env:
-          CARGO_RESOLVER_INCOMPATIBLE_RUST_VERSIONS: fallback
-        run: |
-          rustup update stable
-          cargo +stable --version
-          rm -f Cargo.lock
-          cargo +stable generate-lockfile
-          grep -A1 'name = "toml_edit"' Cargo.lock || true
-
       - name: Build the program
         working-directory: experiment/pda-claim
-        run: cargo build-sbf --sbf-out-dir "$GITHUB_WORKSPACE/experiment/out"
+        # Newer platform-tools (recent Rust) so current library versions compile.
+        run: |
+          cargo build-sbf --tools-version v1.52 --sbf-out-dir "$GITHUB_WORKSPACE/experiment/out"
 
       - name: Deploy to devnet
         run: |
