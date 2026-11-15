@@ -32,7 +32,7 @@ jobs:
 
       - name: Install Solana tools
         run: |
-          sh -c "$(curl -sSfL https://release.anza.xyz/v2.1.21/install)"
+          sh -c "$(curl -sSfL https://release.anza.xyz/v3.0.12/install)"
           echo "$HOME/.local/share/solana/install/active_release/bin" >> "$GITHUB_PATH"
 
       - name: Create the throwaway wallet and program address (first run only)
