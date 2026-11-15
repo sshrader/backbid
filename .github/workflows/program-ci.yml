@@ -1,0 +1,41 @@
+name: Program build and tests
+
+on:
+  push:
+    paths:
+      - 'programs/**'
+      - '.github/workflows/program-ci.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    defaults:
+      run:
+        working-directory: programs/burnpad
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Unit tests (host build)
+        run: |
+          rustup update stable
+          cargo +stable test --lib
+
+      - name: Install the program builder
+        run: cargo install cargo-build-sbf --force --locked
+
+      # SBPF v0 is what devnet accepts today.
+      - name: Build the on-chain program
+        run: cargo-build-sbf --arch v0 --sbf-out-dir "$GITHUB_WORKSPACE/out"
+
+      - name: Program size
+        run: ls -l "$GITHUB_WORKSPACE/out"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: burnpad-so
+          path: out/burnpad.so

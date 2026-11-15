@@ -1,0 +1,17 @@
+[package]
+name = "burnpad"
+version = "0.1.0"
+edition = "2021"
+description = "Per-token fee split, creator stream and burn vault on top of Raydium LaunchLab. Devnet only until audited."
+
+[lib]
+crate-type = ["cdylib", "lib"]
+
+[features]
+default = ["devnet"]
+devnet = []
+mainnet = []
+no-entrypoint = []
+
+[dependencies]
+solana-program = "~2.1"
