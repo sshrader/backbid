@@ -55,20 +55,24 @@ jobs:
           solana config set --url "$RPC_URL" >/dev/null
           BAL=$(solana balance "$DEPLOYER" | awk '{print $1}')
           echo "Wallet $DEPLOYER holds $BAL SOL"
+          # A first run needs about 3 SOL (deploy plus a 1 SOL test buy). Repeat runs need far less.
+          MIN=3
+          [ -f .state/state.json ] && MIN=0.3
+          echo "Needs at least $MIN SOL"
           # The public faucet sometimes works; ignore failure.
-          if awk "BEGIN{exit !($BAL < 3)}"; then
+          if awk "BEGIN{exit !($BAL < $MIN)}"; then
             solana airdrop 2 "$DEPLOYER" || true
             BAL=$(solana balance "$DEPLOYER" | awk '{print $1}')
           fi
-          if awk "BEGIN{exit !($BAL < 3)}"; then
+          if awk "BEGIN{exit !($BAL < $MIN)}"; then
             {
               echo "### Fund the test wallet, then run this workflow again"
               echo ""
-              echo "Send **3 devnet SOL** to \`$DEPLOYER\`"
+              echo "Send **$MIN devnet SOL** to \`$DEPLOYER\`"
               echo ""
               echo "It currently holds $BAL SOL. This is a throwaway wallet that exists only for the experiment."
             } >> "$GITHUB_STEP_SUMMARY"
-            echo "::error::Send 3 devnet SOL to $DEPLOYER and run the workflow again."
+            echo "::error::Send $MIN devnet SOL to $DEPLOYER and run the workflow again."
             exit 1
           fi
 
@@ -87,6 +91,10 @@ jobs:
 
       - name: Deploy to devnet
         run: |
+          if solana program show "$(cat .state/program-id.txt)" --url "$RPC_URL" >/dev/null 2>&1; then
+            echo "Program already deployed. Skipping."
+            exit 0
+          fi
           solana program deploy experiment/out/pda_claim.so \
             --program-id .state/program.json \
             --keypair .state/deployer.json \

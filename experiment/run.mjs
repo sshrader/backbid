@@ -77,7 +77,11 @@ async function vaultLamports() {
 
 let failed = false
 
+const alreadyPassed = state.pdaClaim === 'PASS' && !process.env.FORCE_RERUN
+if (alreadyPassed) log('\nThe PDA claim test already passed in an earlier run. Skipping steps 1 to 4. Set FORCE_RERUN=1 to repeat it.')
+
 try {
+  if (alreadyPassed) throw Object.assign(new Error('skip'), { skip: true })
   section('1. Register a platform whose fee wallet is the PDA')
   const existing = await connection.getAccountInfo(platformId)
   if (existing) {
@@ -175,9 +179,13 @@ try {
   }
   save()
 } catch (e) {
+  if (e.skip) {
+    /* nothing to do */
+  } else {
   failed = true
   log('The experiment stopped early:', e.message)
   if (e.logs) log(e.logs.join('\n'))
+  }
 }
 
 /* ---------- TWAP: how far back does a pool's observation buffer reach? ---------- */
