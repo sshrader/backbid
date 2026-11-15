@@ -92,7 +92,7 @@ try {
   // Short price window and no reserve, so the test finishes in minutes. The program's bounds allow this on devnet only.
   await send('set_params', [ixSetParams(programId, payer.publicKey, { discountBps: 750, maxSaleBps: 200, dailyBps: 1000, guardBps: 1500, twapWindow: 60, reserve: 0 })])
 
-  section('2. Launch with the lowest graduation target, then buy until it graduates')
+  section('2. Launch with a 2 SOL graduation target, then buy until it graduates')
   const mint = Keypair.generate()
   const a = addresses(programId, mint.publicKey)
   log('mint', mint.publicKey.toBase58(), '| platform', a.platform.toBase58())
@@ -104,7 +104,7 @@ try {
   const configId = getPdaLaunchpadConfigId(LAUNCHLAB, NATIVE_MINT, 0, 0).publicKey
   const configInfo = LaunchpadConfig.decode((await connection.getAccountInfo(configId)).data)
   const mintBInfo = await raydium.token.getTokenInfo(configInfo.mintB)
-  const target = configInfo.minFundRaisingB
+  const target = new BN(2_000_000_000) // 2 SOL. Raydium's own minimum is only 1 lamport, which is not a usable curve.
   log('graduation target', target.toString(), 'lamports')
   const { execute } = await raydium.launchpad.createLaunchpad({
     programId: LAUNCHLAB,
