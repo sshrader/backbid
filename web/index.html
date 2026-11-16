@@ -6,42 +6,43 @@
 <title>Burnpad on Devnet</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Zilla+Slab:wght@500;700&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,800&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet">
 <style>
-/* Blackout: a neutral black, no blue. Warm white ink, sodium-yellow for the one action
-   that matters, orange reserved for burning. Slab headlines over a plain sans.
-   Single dark theme by choice. Layout: left-aligned, one main column, trade box beside detail. */
+/* Ember on ink. A blue-black ground so the orange only ever means "burn": the vault
+   meters, the burn button, the burned totals. Steel blue is for the curve and links.
+   Bricolage Grotesque for headlines and big numbers, Plex Sans for reading. One dark theme. */
 :root {
-  --paper: #0B0B0C;
-  --surface: #151516;
-  --raised: #1E1E20;
-  --ink: #F3F0EA;
-  --muted: #9B968D;
-  --line: #2B2A29;
-  --flame: #FFC43D;
-  --flame-soft: #2B2410;
-  --scorch: #FF7A45;
+  --paper: #0D1017;
+  --surface: #141925;
+  --raised: #1C2333;
+  --ink: #ECE8DF;
+  --muted: #8E98AD;
+  --line: #262F44;
+  --flame: #FF7B3A;
+  --flame-soft: #2A1A12;
+  --scorch: #FFA766;
+  --curve: #6FA8FF;
   --good: #7BD389;
   --bad: #FF8A80;
-  --display: "Zilla Slab", Rockwell, Georgia, serif;
+  --display: "Bricolage Grotesque", "Arial Narrow", system-ui, sans-serif;
   --body: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
   color-scheme: dark;
 }
 * { box-sizing: border-box; }
 html, body { margin: 0; }
 body { background: var(--paper); color: var(--ink); font: 400 15px/1.5 var(--body); }
-h1, h2, h3 { font-family: var(--display); font-weight: 700; line-height: 1.1; margin: 0; text-wrap: balance; letter-spacing: -0.01em; }
+h1, h2, h3 { font-family: var(--display); font-weight: 800; line-height: 1.1; margin: 0; text-wrap: balance; letter-spacing: -0.01em; }
 h1 { font-size: clamp(30px, 4.4vw, 48px); } h2 { font-size: 22px; } h3 { font-size: 17px; font-weight: 500; }
-p { margin: 0; } a { color: var(--flame); }
+p { margin: 0; } a { color: var(--curve); }
 button, input, textarea { font: inherit; color: inherit; }
 :focus-visible { outline: 2px solid var(--flame); outline-offset: 2px; }
 .num { font-variant-numeric: tabular-nums; } .muted { color: var(--muted); } .small { font-size: 13px; }
 .mono { font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 13px; overflow-wrap: anywhere; }
 
-.banner { background: var(--flame); color: #14110A; padding: 7px 20px; font-size: 13px; font-weight: 500; }
+.banner { background: var(--flame-soft); color: var(--scorch); border-bottom: 1px solid #4A2C1B; padding: 7px 20px; font-size: 13px; font-weight: 500; }
 .top { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 24px; padding: 14px 20px; border-bottom: 1px solid var(--line); }
-.mark { font: 700 21px var(--display); text-decoration: none; color: var(--ink); }
-.mark span { font: 400 12px var(--body); color: var(--muted); margin-left: 6px; }
+.mark { font: 800 22px var(--display); text-decoration: none; color: var(--ink); }
+.mark span { font: 400 12px var(--body); color: var(--muted); margin-left: 6px; } .mark em { font-style: normal; color: var(--flame); }
 .nav { display: flex; flex-wrap: wrap; gap: 2px; flex: 1; }
 .nav a { padding: 6px 10px; border-radius: 8px; text-decoration: none; color: var(--muted); font-weight: 500; }
 .nav a:hover { color: var(--ink); }
@@ -50,7 +51,7 @@ button, input, textarea { font: inherit; color: inherit; }
 main { max-width: 1120px; margin: 0 auto; padding: 28px 20px 64px; display: flex; flex-direction: column; gap: 24px; }
 .btn { border: 1px solid var(--line); background: var(--raised); color: var(--ink); padding: 9px 14px; border-radius: 8px; font-weight: 600; cursor: pointer; text-decoration: none; display: inline-block; }
 .btn:hover { border-color: var(--muted); }
-.btn.flame { background: var(--flame); border-color: var(--flame); color: #14110A; }
+.btn.flame { background: var(--flame); border-color: var(--flame); color: #1A0E06; }
 .btn.flame:hover { filter: brightness(1.08); }
 .btn.sm { padding: 5px 10px; font-size: 13px; font-weight: 500; }
 .btn[disabled] { opacity: .4; cursor: not-allowed; filter: none; }
@@ -63,7 +64,7 @@ main { max-width: 1120px; margin: 0 auto; padding: 28px 20px 64px; display: flex
 .hero p { max-width: 60ch; color: var(--muted); font-size: 17px; }
 .stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 1px; background: var(--line); border: 1px solid var(--line); border-radius: 14px; overflow: hidden; }
 .stats div { background: var(--surface); padding: 14px 16px; color: var(--muted); }
-.stats b { display: block; font: 700 24px var(--display); color: var(--ink); }
+.stats b { display: block; font: 800 26px var(--display); color: var(--ink); }
 
 .tabs { display: flex; flex-wrap: wrap; gap: 4px; border-bottom: 1px solid var(--line); }
 .tabs button { background: none; border: 0; border-bottom: 2px solid transparent; padding: 8px 12px; cursor: pointer; font-weight: 500; color: var(--muted); }
@@ -76,9 +77,9 @@ a.trow:hover { background: var(--raised); }
 .av { width: 40px; height: 40px; border-radius: 50%; flex: none; display: grid; place-items: center; font: 700 17px var(--display); background: var(--raised); border: 1px solid var(--line); object-fit: cover; }
 .av.big { width: 64px; height: 64px; font-size: 26px; }
 .pill { display: inline-block; font-size: 12px; font-weight: 600; padding: 2px 9px; border-radius: 99px; border: 1px solid currentColor; }
-.pill.grad { color: var(--good); } .pill.curve { color: var(--flame); } .pill.off { color: var(--muted); }
+.pill.grad { color: var(--good); } .pill.curve { color: var(--curve); } .pill.off { color: var(--muted); }
 .prog { height: 8px; background: var(--raised); border-radius: 4px; overflow: hidden; } .prog.big { height: 14px; border-radius: 7px; }
-.prog i { display: block; height: 100%; background: var(--flame); }
+.prog i { display: block; height: 100%; background: var(--curve); } .prog.vault i { background: linear-gradient(90deg, #FF7B3A, #FFB36B); }
 
 .cols { display: grid; grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr); gap: 24px; align-items: start; }
 @media (max-width: 900px) { .cols { grid-template-columns: minmax(0, 1fr); } }
@@ -95,13 +96,43 @@ input[type="text"], input[type="number"], input[type="url"], input[type="file"],
 .msg.bad { background: transparent; border-color: var(--bad); color: var(--bad); }
 .msg.good { background: transparent; border-color: var(--good); color: var(--good); }
 .steps { margin: 0; padding-left: 20px; display: flex; flex-direction: column; gap: 10px; max-width: 68ch; }
+
+.search { flex: 1 1 220px; max-width: 360px; position: relative; }
+.search input { width: 100%; background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 8px 12px; }
+.heroGrid { display: grid; grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr); gap: 32px; align-items: center; padding: 18px 0 6px; }
+@media (max-width: 900px) { .heroGrid { grid-template-columns: minmax(0, 1fr); } }
+.heroGrid h1 { font-size: clamp(34px, 5vw, 58px); letter-spacing: -0.02em; }
+.heroGrid p { color: var(--muted); font-size: 17px; max-width: 54ch; }
+.stats3 { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1px; background: var(--line); border: 1px solid var(--line); border-radius: 16px; overflow: hidden; }
+.stats3 > div { background: var(--surface); padding: 14px 18px; color: var(--muted); font-size: 13px; }
+.stats3 > div.wide { grid-column: 1 / -1; padding: 18px; background: linear-gradient(135deg, #1D1812, var(--surface) 70%); }
+.stats3 b { display: block; font: 800 28px var(--display); color: var(--ink); line-height: 1.15; }
+.stats3 .wide b { font-size: 44px; color: var(--scorch); }
+.grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(250px, 1fr)); gap: 14px; }
+.card { display: flex; flex-direction: column; gap: 12px; background: var(--surface); border: 1px solid var(--line); border-radius: 14px; padding: 14px; text-decoration: none; color: var(--ink); }
+.card:hover { border-color: #3A4766; background: #171D2B; }
+.card .top2 { display: flex; gap: 11px; align-items: center; justify-content: space-between; }
+.card dl { display: grid; grid-template-columns: 1fr 1fr; gap: 8px 12px; }
+.card dt { font-size: 12px; color: var(--muted); } .card dd { margin: 0; font-weight: 600; font-variant-numeric: tabular-nums; }
+.card dd.burn { color: var(--scorch); }
+.lb { width: 100%; border-collapse: collapse; }
+.lb th { text-align: right; font-weight: 500; font-size: 13px; color: var(--muted); padding: 6px 10px; border-bottom: 1px solid var(--line); }
+.lb th:nth-child(-n+2) { text-align: left; }
+.lb td { padding: 12px 10px; border-bottom: 1px solid var(--line); text-align: right; font-variant-numeric: tabular-nums; }
+.lb td:nth-child(-n+2) { text-align: left; }
+.lb tr.hit:hover { background: var(--raised); cursor: pointer; }
+.lb .rk { width: 34px; color: var(--muted); font: 800 16px var(--display); }
+.lb td.burn { color: var(--scorch); font-weight: 600; }
+.lb a { color: var(--ink); text-decoration: none; font-weight: 600; }
+@media (max-width: 700px) { .lb th:nth-child(5), .lb td:nth-child(5), .lb th:nth-child(6), .lb td:nth-child(6) { display: none; } }
 @media (prefers-reduced-motion: no-preference) { .prog i { transition: width .4s ease; } }
 </style>
 </head>
 <body>
 <div class="banner">Running on Solana devnet. Tokens and SOL here are test assets with no value.</div>
 <header class="top">
-  <a class="mark" href="#tokens">Burnpad<span>working name</span></a>
+  <a class="mark" href="#tokens">Burn<em>pad</em><span>working name</span></a>
+  <div class="search"><input type="search" id="q" placeholder="Search by name, ticker or address" aria-label="Search tokens"></div>
   <nav class="nav" id="nav" aria-label="Main"></nav>
   <div class="row" id="wallet"></div>
 </header>
@@ -123,7 +154,7 @@ const short = (a) => a.slice(0, 4) + '…' + a.slice(-4);
 const ago = (ms) => { const m = (Date.now() - ms) / 60000; return m < 1 ? 'just now' : m < 60 ? Math.round(m) + ' min ago' : m < 1440 ? Math.round(m / 60) + ' h ago' : Math.round(m / 1440) + ' d ago'; };
 const explorer = (kind, id) => 'https://explorer.solana.com/' + kind + '/' + encodeURIComponent(id) + '?cluster=devnet';
 
-let S = { cfg: null, tokens: [], loaded: false, loadError: null, owner: null, sol: null, held: {}, tab: 'new', side: 'buy', amt: '0.1', busy: false, vamt: '', vq: null, launch: { name: '', symbol: '', desc: '', first: '', target: '85', imageUrl: '' } };
+let S = { cfg: null, tokens: [], loaded: false, loadError: null, owner: null, sol: null, held: {}, tab: 'new', q: '', vsort: 'sol', side: 'buy', amt: '0.1', busy: false, vamt: '', vq: null, launch: { name: '', symbol: '', desc: '', first: '', target: '85', imageUrl: '' } };
 let wallet = null, quoteTimer = null, quoteSeq = 0, vTimer = null, vSeq = 0;
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
@@ -307,22 +338,41 @@ function vquote() {
 }
 
 /* ---------- Views ---------- */
+const vOf = (t) => { const b = t.pool && t.pool.burnpad, v = b && b.vault; return { sol: v ? v.sol : 0, burned: v ? v.burnedTokens : 0, paid: v ? v.paidSol : 0, harvested: b ? b.harvestedSol : 0, open: !!(b && b.graduated && !b.expired) }; };
+const matches = (t) => { const q = S.q.trim().toLowerCase(); return !q || (t.name || '').toLowerCase().includes(q) || (t.symbol || '').toLowerCase().includes(q) || t.mint.toLowerCase() === q || t.mint.toLowerCase().startsWith(q); };
+function tokenCards() {
+  const tk = S.tokens.filter(matches), by = (f) => (a, b) => f(b) - f(a);
+  const sets = { new: tk.slice().sort(by((t) => t.createdAt)), vault: tk.slice().sort(by((t) => vOf(t).sol)), soon: tk.filter((t) => t.pool && t.pool.status === 0 && progress(t) >= 50).sort(by(progress)), graduated: tk.filter((t) => t.pool && t.pool.status !== 0) };
+  const empty = { new: S.q ? 'No token matches that search.' : 'No tokens yet. Launch the first one.', vault: 'No tokens yet. Launch the first one.', soon: 'No token is past the halfway mark yet.', graduated: 'No token has reached its graduation target yet.' };
+  if (S.loadError) return '<p class="muted">' + esc(S.loadError) + '</p>';
+  if (!S.loaded) return '<p class="muted">Loading tokens…</p>';
+  const list = sets[S.tab];
+  if (!list.length) return '<p class="muted" style="padding:12px 0">' + empty[S.tab] + '</p>';
+  return '<div class="grid">' + list.map((t) => { const v = vOf(t), p = t.pool;
+    return '<a class="card" href="#t-' + esc(t.mint) + '"><div class="top2"><span class="tok">' + avatar(t) + '<span><b>' + esc(t.name) + '</b><span class="muted small">' + esc(t.symbol) + ', ' + ago(t.createdAt) + '</span></span></span></div>' + status(t) +
+      '<div class="prog"><i style="width:' + progress(t) + '%"></i></div><dl><div><dt>Price, SOL per 1M</dt><dd>' + (p ? fPrice(p.price) : 'n/a') + '</dd></div><div><dt>Raised</dt><dd>' + (p ? fSol(p.raisedSol) : 'n/a') + '</dd></div>' +
+      '<div><dt>In vault</dt><dd class="burn">' + fSol(v.sol) + '</dd></div><div><dt>Burned</dt><dd class="burn">' + fTok(v.burned) + '</dd></div></dl></a>'; }).join('') + '</div>';
+}
 function viewTokens() {
-  const tk = S.tokens;
-  const sets = { new: tk.slice().sort((a, b) => b.createdAt - a.createdAt), raised: tk.slice().sort((a, b) => (b.pool ? b.pool.raisedSol : 0) - (a.pool ? a.pool.raisedSol : 0)),
-    soon: tk.filter((t) => t.pool && t.pool.status === 0 && progress(t) >= 50).sort((a, b) => progress(b) - progress(a)), graduated: tk.filter((t) => t.pool && t.pool.status !== 0) };
-  const names = { new: 'New', raised: 'Most raised', soon: 'About to graduate', graduated: 'Graduated' };
-  const empty = { new: 'No tokens yet. Launch the first one.', raised: 'No tokens yet. Launch the first one.', soon: 'No token is past the halfway mark yet.', graduated: 'No token has reached its graduation target yet.' };
-  const rows = sets[S.tab].map((t) => '<a class="trow" href="#t-' + esc(t.mint) + '"><span class="tok">' + avatar(t) + '<span><b>' + esc(t.name) + '</b><span class="muted small">' + esc(t.symbol) + ', ' + ago(t.createdAt) +
-    '</span></span></span><span>' + status(t) + '<div class="prog" style="margin-top:7px"><i style="width:' + progress(t) + '%"></i></div></span><span class="num">' + (t.pool ? fPrice(t.pool.price) : 'n/a') +
-    '</span><span class="num">' + (t.pool ? fSol(t.pool.raisedSol) : 'n/a') + '</span></a>').join('');
-  return '<section class="hero"><h1>Every token gets a burn vault.</h1><p>Tokens start on a bonding curve and move to a Raydium pool with locked liquidity when they reach their target. Part of every trading fee goes to a vault that buys tokens from holders at a discount and burns them. The creator’s share is locked until the token graduates.</p>' +
-    '<div class="row"><a class="btn flame" href="#launch">Launch a token</a><a class="btn" href="#how">How it works</a></div></section>' +
-    '<section class="stats num" aria-label="Totals"><div><b>' + tk.length + '</b>Tokens launched</div><div><b>' + tk.filter((t) => t.pool && t.pool.status !== 0).length + '</b>Graduated</div><div><b>' +
-    tk.reduce((s, t) => s + (t.pool ? t.pool.raisedSol : 0), 0).toFixed(2) + '</b>SOL on curves</div></section>' +
-    '<section class="panel"><h2>Tokens</h2><div class="tabs" role="tablist">' + Object.keys(names).map((k) => '<button role="tab" aria-selected="' + (S.tab === k) + '" data-act="tab" data-v="' + k + '">' + names[k] + '</button>').join('') + '</div>' +
-    (S.loadError ? '<p class="muted">' + esc(S.loadError) + '</p>' : !S.loaded ? '<p class="muted">Loading tokens…</p>' :
-      '<div><div class="trow head"><span>Token</span><span>Progress to graduation</span><span>Price, SOL per 1M</span><span>Raised</span></div>' + (rows || '<p class="muted" style="padding:16px 8px">' + empty[S.tab] + '</p>') + '</div>') + '</section>';
+  const tk = S.tokens, vs = tk.map(vOf), sum = (f) => vs.reduce((a, v) => a + f(v), 0);
+  const names = { new: 'New', vault: 'Biggest vaults', soon: 'About to graduate', graduated: 'Graduated' };
+  return '<section class="heroGrid"><div class="stack" style="gap:18px"><h1>Every token gets a burn vault.</h1><p>Tokens launch on a Raydium bonding curve. Half of every platform fee goes into that token’s vault. After graduation, the vault buys tokens from holders at a discount and burns them. The creator’s share is locked until graduation.</p>' +
+    '<div class="row"><a class="btn flame" href="#launch">Launch a token</a><a class="btn" href="#vaults">See the vaults</a><a class="btn" href="#how">How it works</a></div>' +
+    '<p class="small">Platform fee ' + (S.cfg && S.cfg.platformFeePercent != null ? S.cfg.platformFeePercent : '1.25') + '%, plus Raydium’s 0.25%. Devnet only, unaudited.</p></div>' +
+    '<div class="stats3 num" aria-label="Totals"><div class="wide"><b>' + fTok(sum((v) => v.burned)) + '</b>Tokens burned by vaults</div>' +
+    '<div><b>' + tk.length + '</b>Tokens launched</div><div><b>' + tk.filter((t) => t.pool && t.pool.status !== 0).length + '</b>Graduated</div>' +
+    '<div><b>' + fSol(sum((v) => v.sol)) + '</b>SOL in vaults</div><div><b>' + fSol(sum((v) => v.paid)) + '</b>Paid to sellers</div></div></section>' +
+    '<section class="stack" style="gap:14px"><div class="row between"><h2>Tokens</h2><a class="btn sm" href="#vaults">Vault leaderboard</a></div><div class="tabs" role="tablist">' + Object.keys(names).map((k) => '<button role="tab" aria-selected="' + (S.tab === k) + '" data-act="tab" data-v="' + k + '">' + names[k] + '</button>').join('') + '</div>' +
+    '<div id="list">' + tokenCards() + '</div></section>';
+}
+function viewVaults() {
+  const rows = S.tokens.filter((t) => t.pool && t.pool.burnpad).map((t) => ({ t, v: vOf(t) })).sort((a, b) => b.v[S.vsort] - a.v[S.vsort]);
+  const sorts = { sol: 'In vault', burned: 'Tokens burned', paid: 'Paid to sellers' };
+  const total = rows.reduce((a, r) => a + r.v.sol, 0);
+  return '<h1>Vault leaderboard</h1><p class="muted" style="max-width:62ch">Each token’s burn vault collects half of its platform fee. Once the token has graduated, the vault buys from holders below the pool price and burns what it buys.</p>' +
+    '<section class="panel"><div class="row between"><div class="seg" role="group" aria-label="Sort by">' + Object.keys(sorts).map((k) => '<button aria-pressed="' + (S.vsort === k) + '" data-act="vsort" data-v="' + k + '">' + sorts[k] + '</button>').join('') + '</div><span class="muted small num">' + rows.length + ' vaults, ' + fSol(total) + ' in total</span></div>' +
+    (!S.loaded ? '<p class="muted">Loading…</p>' : !rows.length ? '<p class="muted">No vaults yet. Launch a token to create the first one.</p>' :
+      '<table class="lb"><thead><tr><th></th><th>Token</th><th>In vault</th><th>Burned</th><th>Paid to sellers</th><th>Status</th></tr></thead><tbody>' + rows.map((r, i) => '<tr class="hit" data-go="' + esc(r.t.mint) + '"><td class="rk">' + (i + 1) + '</td><td><span class="tok">' + avatar(r.t) + '<a href="#t-' + esc(r.t.mint) + '">' + esc(r.t.name) + '</a></span></td><td>' + fSol(r.v.sol) + '</td><td class="burn">' + fTok(r.v.burned) + '</td><td>' + fSol(r.v.paid) + '</td><td>' + (r.v.open ? 'Open' : r.t.pool.status === 0 ? 'On curve' : 'Opening') + '</td></tr>').join('') + '</tbody></table>') + '</section>';
 }
 function viewToken(t) {
   if (t.missing) return '<p><a href="#tokens">All tokens</a></p><section class="panel"><h2>Token not found</h2><p class="muted">' + (S.loaded ? 'This address is not a token launched here.' : 'Loading…') + '</p></section>';
@@ -388,9 +438,9 @@ function viewHow() {
 function render() {
   if (!API) { $('view').innerHTML = '<section class="panel"><h2>Not connected to a server</h2><p class="muted">Set the server address in config.js, then reload.</p></section>'; return; }
   const t = current(), pg = page();
-  $('nav').innerHTML = [['tokens', 'Tokens'], ['launch', 'Launch'], ['admin', 'Admin'], ['how', 'How it works']].map((n) => '<a href="#' + n[0] + '"' + (pg === n[0] ? ' aria-current="page"' : '') + '>' + n[1] + '</a>').join('') + '<a href="prototype.html">Simulator</a>';
+  $('nav').innerHTML = [['tokens', 'Tokens'], ['vaults', 'Vaults'], ['launch', 'Launch'], ['how', 'How it works'], ['admin', 'Admin']].map((n) => '<a href="#' + n[0] + '"' + (pg === n[0] ? ' aria-current="page"' : '') + '>' + n[1] + '</a>').join('') + '<a href="prototype.html">Simulator</a>';
   $('wallet').innerHTML = S.owner ? '<span class="small num muted">' + (S.sol == null ? '' : fSol(S.sol)) + '</span><span class="btn sm mono" title="' + esc(S.owner) + '">' + esc(short(S.owner)) + '</span>' : '<button class="btn flame sm" data-act="connect">Connect wallet</button>';
-  $('view').innerHTML = t ? viewToken(t) : pg === 'launch' ? viewLaunch() : pg === 'admin' ? viewAdmin() : pg === 'how' ? viewHow() : viewTokens();
+  $('view').innerHTML = t ? viewToken(t) : pg === 'launch' ? viewLaunch() : pg === 'vaults' ? viewVaults() : pg === 'admin' ? viewAdmin() : pg === 'how' ? viewHow() : viewTokens();
   if (t && !t.missing) { quote(); vquote(); }
 }
 function quote() {
@@ -413,11 +463,13 @@ function quote() {
 }
 
 document.addEventListener('click', async (e) => {
+  const row = e.target.closest('[data-go]'); if (row && !e.target.closest('a')) { location.hash = '#t-' + row.dataset.go; return; }
   const b = e.target.closest('[data-act]'); if (!b) return;
   const act = b.dataset.act, v = b.dataset.v, t = current();
   if (act === 'connect') return startConnect();
   if (act === 'pick') return connect(wallets()[+v][1]);
   if (act === 'tab') { S.tab = v; return render(); }
+  if (act === 'vsort') { S.vsort = v; return render(); }
   if (act === 'side') { S.side = v; S.amt = v === 'buy' ? '0.1' : ''; return render(); }
   if (act === 'pct' && t) { S.amt = String(Math.floor((S.held[t.mint] || 0) * v / 100 * 1e6) / 1e6); return render(); }
   if (act === 'copy') { try { await navigator.clipboard.writeText(v); b.textContent = 'Copied'; } catch (err) { b.textContent = 'Copy failed'; } return; }
@@ -444,7 +496,8 @@ document.addEventListener('click', async (e) => {
 });
 document.addEventListener('input', (e) => {
   const id = e.target.id;
-  if (id === 'amt') { S.amt = e.target.value; quote(); }
+  if (id === 'q') { S.q = e.target.value; if (page() !== 'tokens' || current()) { location.hash = '#tokens'; return; } if ($('list')) $('list').innerHTML = tokenCards(); }
+  else if (id === 'amt') { S.amt = e.target.value; quote(); }
   else if (id === 'vamt') { S.vamt = e.target.value; vquote(); }
   else if (id === 'l-image') {
     const f = e.target.files[0];
