@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Launchpad on Devnet</title>
+<title>Burnpad on Devnet</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Zilla+Slab:wght@500;700&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet">
@@ -123,8 +123,9 @@ const short = (a) => a.slice(0, 4) + '…' + a.slice(-4);
 const ago = (ms) => { const m = (Date.now() - ms) / 60000; return m < 1 ? 'just now' : m < 60 ? Math.round(m) + ' min ago' : m < 1440 ? Math.round(m / 60) + ' h ago' : Math.round(m / 1440) + ' d ago'; };
 const explorer = (kind, id) => 'https://explorer.solana.com/' + kind + '/' + encodeURIComponent(id) + '?cluster=devnet';
 
-let S = { cfg: null, tokens: [], loaded: false, loadError: null, owner: null, sol: null, held: {}, tab: 'new', side: 'buy', amt: '0.1', busy: false, launch: { name: '', symbol: '', desc: '', first: '', target: '85', imageUrl: '' } };
-let wallet = null, quoteTimer = null, quoteSeq = 0;
+let S = { cfg: null, tokens: [], loaded: false, loadError: null, owner: null, sol: null, held: {}, tab: 'new', side: 'buy', amt: '0.1', busy: false, vamt: '', vq: null, launch: { name: '', symbol: '', desc: '', first: '', target: '85', imageUrl: '' } };
+let wallet = null, quoteTimer = null, quoteSeq = 0, vTimer = null, vSeq = 0;
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 /* ---------- API and wallet ---------- */
 async function api(path, body) {
@@ -160,23 +161,54 @@ function startConnect() {
 const fromB64 = (s) => Uint8Array.from(atob(s), (c) => c.charCodeAt(0));
 const toB64 = (bytes) => { let s = ''; bytes.forEach((b) => (s += String.fromCharCode(b))); return btoa(s); };
 
+/* Sign what the server built in the wallet, then hand it back to be sent. */
+async function signSend(label, built, extra) {
+  say(esc(label) + ': approve it in your wallet. If no window appears, click the wallet’s icon in your browser toolbar.');
+  const txs = built.transactions.map((b) => solanaWeb3.VersionedTransaction.deserialize(fromB64(b)));
+  const signed = txs.length > 1 ? await wallet.signAllTransactions(txs) : [await wallet.signTransaction(txs[0])];
+  say(esc(label) + ': sending to devnet and waiting for confirmation…');
+  const sent = await api('/tx/send', { transactions: signed.map((t) => toB64(t.serialize())), ...(extra || {}) });
+  say(esc(label) + ' confirmed. ' + sent.signatures.map((s) => '<a href="' + explorer('tx', s) + '" rel="noopener">View on Solana Explorer</a>').join(' '), 'good');
+  return sent;
+}
+function guard() {
+  if (S.busy) return false;
+  if (!S.owner) { say('Connect your wallet first.', 'bad'); return false; }
+  return true;
+}
 /* Ask the server for unsigned transactions, sign in the wallet, hand back to be sent. */
 async function run(label, path, body) {
-  if (S.busy) return null;
-  if (!S.owner) { say('Connect your wallet first.', 'bad'); return null; }
+  if (!guard()) return null;
   S.busy = true;
   try {
     say(esc(label) + ': preparing the transaction…');
     const built = await api(path, { owner: S.owner, ...body });
-    say(esc(label) + ': approve it in your wallet. If no window appears, click the wallet’s icon in your browser toolbar.');
-    const txs = built.transactions.map((b) => solanaWeb3.VersionedTransaction.deserialize(fromB64(b)));
-    const signed = txs.length > 1 ? await wallet.signAllTransactions(txs) : [await wallet.signTransaction(txs[0])];
-    say(esc(label) + ': sending to devnet and waiting for confirmation…');
-    const sent = await api('/tx/send', { transactions: signed.map((t) => toB64(t.serialize())), mint: built.mint, platformId: built.platformId });
-    say(esc(label) + ' confirmed. ' + sent.signatures.map((s) => '<a href="' + explorer('tx', s) + '" rel="noopener">View on Solana Explorer</a>').join(' '), 'good');
+    await signSend(label, built, { mint: built.mint });
     S.busy = false;
     await refresh();
     return built;
+  } catch (e) {
+    say(esc(e && e.message ? e.message : e), 'bad');
+    return null;
+  } finally { S.busy = false; }
+}
+/* A launch is two transactions: register the token and its platform, then create the curve. */
+async function launchFlow(label, body) {
+  if (!guard()) return null;
+  S.busy = true;
+  try {
+    say(esc(label) + ', step 1 of 2: preparing…');
+    const first = await api('/tx/launch', { owner: S.owner, ...body });
+    await signSend(label + ', step 1 of 2', first, {});
+    let second = null;
+    for (let i = 0; i < 8 && !second; i++) {
+      try { second = await api('/tx/launch-pool', { owner: S.owner, mint: first.mint }); }
+      catch (e) { if (i === 7) throw e; await sleep(3000); }
+    }
+    await signSend(label + ', step 2 of 2', second, { mint: first.mint });
+    S.busy = false;
+    await refresh();
+    return first;
   } catch (e) {
     say(esc(e && e.message ? e.message : e), 'bad');
     return null;
@@ -212,6 +244,68 @@ function status(t) {
   return t.pool.status === 0 ? '<span class="pill curve">On curve, ' + progress(t).toFixed(1) + '%</span>' : t.pool.status === 1 ? '<span class="pill grad">Target reached, moving to pool</span>' : '<span class="pill grad">Graduated</span>';
 }
 
+
+/* ---------- Burn vault and creator panels ---------- */
+function vaultPanel(t) {
+  const b = t.pool && t.pool.burnpad;
+  if (!b) return '<section class="panel"><h3>Burn vault</h3><p class="note">This token was launched before burn vaults existed, so it has none.</p></section>';
+  const v = b.vault;
+  const state = b.expired ? 'Creator share moved here' : b.graduated ? (v && v.paused ? 'Paused' : 'Open') : 'Opens at graduation';
+  return '<section class="panel"><div class="row between"><h3>Burn vault</h3><span class="pill ' + (b.graduated && !b.expired ? 'grad' : 'off') + '">' + state + '</span></div>' +
+    '<p class="small muted">Half of the platform fee from every trade of this token collects in its vault. After the token graduates, holders can sell tokens to the vault at a discount, and the vault burns them.</p>' +
+    '<dl class="kv"><dt>In the vault</dt><dd>' + fSol(v ? v.sol : 0) + '</dd><dt>Tokens burned</dt><dd>' + fTok(v ? v.burnedTokens : 0) + '</dd><dt>Paid to sellers</dt><dd>' + fSol(v ? v.paidSol : 0) + '</dd>' +
+    (v ? '<dt>Bid</dt><dd>' + v.discountPercent + '% under the recent price</dd><dt>Limit per sale</dt><dd>' + v.maxSalePercent + '% of the vault</dd><dt>Limit per day</dt><dd>' + v.dailyPercent + '% of the vault</dd>' : '') +
+    '<dt>Fees waiting to be harvested</dt><dd>' + b.pendingFeesSol.toFixed(6) + ' SOL</dd></dl>' +
+    '<div class="row">' + (b.pendingFeesSol > 0 ? '<button class="btn sm" data-act="harvest">Harvest fees</button>' : '') +
+    (t.pool.status === 2 && !b.graduated && !b.expired ? '<button class="btn sm flame" data-act="graduate">Open the vault</button>' : '') + '</div>' +
+    '<p class="small muted">Anyone can harvest fees or open the vault. The vault’s SOL can only ever be paid to holders who sell to it.</p></section>';
+}
+function creatorPanel(t) {
+  const b = t.pool && t.pool.burnpad;
+  if (!b || !b.creatorStream) return '';
+  const c = b.creatorStream, mine = S.owner && S.owner === b.creator;
+  const note = b.expired ? 'The token did not graduate within 30 days, so the creator share went to the burn vault.'
+    : b.graduated ? 'Vests evenly over 30 days from graduation.'
+    : 'Locked until the token graduates. If it has not graduated by ' + new Date(b.expiresAt * 1000).toLocaleDateString() + ', it goes to the burn vault instead.';
+  return '<section class="panel"><h3>Creator share</h3><p class="small muted">' + note + '</p><dl class="kv"><dt>Creator</dt><dd class="mono">' + esc(short(b.creator)) + '</dd><dt>Earned so far</dt><dd>' + fSol(c.totalSol) +
+    '</dd><dt>Claimed</dt><dd>' + fSol(c.claimedSol) + '</dd><dt>Ready to claim</dt><dd>' + fSol(c.claimableSol) + '</dd></dl>' +
+    '<div class="row">' + (mine ? '<button class="btn sm flame" data-act="claimcreator"' + (c.claimableSol > 0 && !b.expired ? '' : ' disabled') + '>Claim</button>' : '') +
+    (b.canExpire ? '<button class="btn sm" data-act="expire">Move to the vault</button>' : '') + '</div></section>';
+}
+function vquoteHtml() {
+  const x = parseFloat(S.vamt);
+  if (!(x > 0)) return '<span class="muted">Enter an amount to see the vault’s bid.</span>';
+  if (!S.vq || S.vq.amt !== S.vamt) return '<span class="muted">Getting the vault’s bid…</span>';
+  if (S.vq.error) return '<span style="color:var(--bad)">' + esc(S.vq.error) + '</span>';
+  const q = S.vq.quote;
+  return q.ok ? 'The vault pays about <b>' + fSol(q.bidSol) + '</b> for <b>' + fTok(x) + '</b>, in SOL. The tokens are burned.' : '<span style="color:var(--bad)">' + esc(q.reason || 'The vault cannot take that right now.') + '</span>' + (q.maxSaleSol != null ? '<div class="small muted">Largest sale right now: ' + fSol(q.maxSaleSol) + '.</div>' : '');
+}
+function sellPanel(t) {
+  const b = t.pool && t.pool.burnpad;
+  if (!b || !b.graduated || b.expired || !b.vault) return '';
+  const held = S.held[t.mint];
+  return '<section class="panel"><h3>Sell to the burn vault</h3><p class="small muted">The vault bids below the recent price and burns what it buys. The pool may pay more, so compare before you sell.</p>' +
+    '<div class="field"><label for="vamt">Amount in ' + esc(t.symbol) + '</label><input type="number" id="vamt" min="0" step="any" value="' + esc(S.vamt) + '"></div>' +
+    (held ? '<div class="row"><button class="btn sm" data-act="vpct" data-v="25">25%</button><button class="btn sm" data-act="vpct" data-v="50">50%</button><button class="btn sm" data-act="vpct" data-v="100">All</button></div>' : '') +
+    '<div class="quote" id="vquote">' + vquoteHtml() + '</div><button class="btn flame" data-act="vsell">' + (S.owner ? 'Sell to the vault' : 'Connect wallet to sell') + '</button></section>';
+}
+function vquote() {
+  const t = current(), box = $('vquote');
+  if (!box || !t || !t.mint) return;
+  clearTimeout(vTimer);
+  const x = parseFloat(S.vamt);
+  box.innerHTML = vquoteHtml();
+  if (!(x > 0)) return;
+  const amt = S.vamt, seq = ++vSeq;
+  vTimer = setTimeout(async () => {
+    try {
+      const r = await api('/vault/' + encodeURIComponent(t.mint) + '?tokens=' + encodeURIComponent(amt));
+      if (seq === vSeq) S.vq = { amt, quote: r.quote };
+    } catch (e) { if (seq === vSeq) S.vq = { amt, error: e.message }; }
+    if (seq === vSeq && $('vquote')) $('vquote').innerHTML = vquoteHtml();
+  }, 350);
+}
+
 /* ---------- Views ---------- */
 function viewTokens() {
   const tk = S.tokens;
@@ -222,7 +316,7 @@ function viewTokens() {
   const rows = sets[S.tab].map((t) => '<a class="trow" href="#t-' + esc(t.mint) + '"><span class="tok">' + avatar(t) + '<span><b>' + esc(t.name) + '</b><span class="muted small">' + esc(t.symbol) + ', ' + ago(t.createdAt) +
     '</span></span></span><span>' + status(t) + '<div class="prog" style="margin-top:7px"><i style="width:' + progress(t) + '%"></i></div></span><span class="num">' + (t.pool ? fPrice(t.pool.price) : 'n/a') +
     '</span><span class="num">' + (t.pool ? fSol(t.pool.raisedSol) : 'n/a') + '</span></a>').join('');
-  return '<section class="hero"><h1>Launch a token on Raydium in one transaction.</h1><p>Each token starts on a bonding curve and moves to a Raydium pool with locked liquidity when it reaches its target. A burn vault that buys tokens back and destroys them is in development.</p>' +
+  return '<section class="hero"><h1>Every token gets a burn vault.</h1><p>Tokens start on a bonding curve and move to a Raydium pool with locked liquidity when they reach their target. Part of every trading fee goes to a vault that buys tokens from holders at a discount and burns them. The creator’s share is locked until the token graduates.</p>' +
     '<div class="row"><a class="btn flame" href="#launch">Launch a token</a><a class="btn" href="#how">How it works</a></div></section>' +
     '<section class="stats num" aria-label="Totals"><div><b>' + tk.length + '</b>Tokens launched</div><div><b>' + tk.filter((t) => t.pool && t.pool.status !== 0).length + '</b>Graduated</div><div><b>' +
     tk.reduce((s, t) => s + (t.pool ? t.pool.raisedSol : 0), 0).toFixed(2) + '</b>SOL on curves</div></section>' +
@@ -232,13 +326,13 @@ function viewTokens() {
 }
 function viewToken(t) {
   if (t.missing) return '<p><a href="#tokens">All tokens</a></p><section class="panel"><h2>Token not found</h2><p class="muted">' + (S.loaded ? 'This address is not a token launched here.' : 'Loading…') + '</p></section>';
-  const p = t.pool, onCurve = p && p.status === 0, onPool = p && p.status === 2 && p.cpmm, live = onCurve || onPool, held = S.held[t.mint], fee = S.cfg && S.cfg.platform && S.cfg.platform.feePercent;
+  const p = t.pool, onCurve = p && p.status === 0, onPool = p && p.status === 2 && p.cpmm, live = onCurve || onPool, held = S.held[t.mint], fee = S.cfg && S.cfg.platformFeePercent;
   const left = '<div class="stack"><section class="panel"><div class="row between"><span class="tok">' + avatar(t, true) + '<span><h2>' + esc(t.name) + '</h2><span class="muted">' + esc(t.symbol) + ', launched ' + ago(t.createdAt) + '</span></span></span>' + status(t) + '</div>' +
     (t.description ? '<p>' + esc(t.description) + '</p>' : '') +
     '<div class="row"><span class="mono muted">' + esc(t.mint) + '</span><button class="btn sm" data-act="copy" data-v="' + esc(t.mint) + '">Copy address</button><a class="btn sm" href="' + explorer('address', t.mint) + '" rel="noopener">Solana Explorer</a></div></section>' +
     (p ? '<section class="panel"><h3>' + (p.status === 0 ? 'Bonding curve' : 'Graduated from the curve') + '</h3><div class="prog big"><i style="width:' + progress(t) + '%"></i></div><dl class="kv"><dt>Raised toward graduation</dt><dd>' + fSol(p.raisedSol) + ' of ' + p.targetSol + '</dd><dt>Price, SOL per 1M tokens</dt><dd>' + fPrice(p.price) +
       '</dd>' + (p.cpmm ? '<dt>Pool liquidity, locked</dt><dd>' + fSol(p.cpmm.solReserve) + ' and ' + fTok(p.cpmm.tokenReserve) + ' tokens</dd>' : '') + '<dt>Sold from the curve</dt><dd>' + fTok(p.soldTokens) + ' of ' + fTok(p.curveTokens) + '</dd><dt>Total supply</dt><dd>' + fTok(p.supply) + '</dd><dt>Creator</dt><dd class="mono">' + esc(short(p.creator)) + '</dd></dl></section>' : '') +
-    '<section class="panel"><h3>Burn vault</h3><p class="note">Not live yet. In the full design, part of every trading fee collects in a vault for this token, and after graduation the vault buys tokens from holders and burns them.</p></section></div>';
+    vaultPanel(t) + creatorPanel(t) + '</div>';
   const right = '<div class="stack"><section class="panel">' + (!p ? '<h3>Trade</h3><p class="muted">This token’s pool could not be read just now. Try again in a moment.</p>' :
     !live ? '<h3>Trade</h3><p class="note">' + (p.status === 1 ? 'This token reached its target. Raydium is moving it to a pool, which can take a few minutes. Trading resumes there.' : 'This token has graduated, but its Raydium pool could not be read just now. Try again in a moment.') + '</p>' :
     '<div class="row between"><h3>' + (onCurve ? 'Trade on the curve' : 'Trade on the Raydium pool') + '</h3><div class="seg"><button aria-pressed="' + (S.side === 'buy') + '" data-act="side" data-v="buy">Buy</button><button aria-pressed="' + (S.side === 'sell') + '" data-act="side" data-v="sell">Sell</button></div></div>' +
@@ -247,7 +341,7 @@ function viewToken(t) {
     '<div class="quote" id="quote"><span class="muted">Enter an amount to see a quote.</span></div>' +
     '<button class="btn flame" data-act="trade">' + (S.owner ? (S.side === 'buy' ? 'Buy ' : 'Sell ') + esc(t.symbol) : 'Connect wallet to trade') + '</button>' +
     '<p class="small muted">' + (S.owner ? 'You hold ' + (held == null ? '0' : fTok(held)) + ' ' + esc(t.symbol) + ' and ' + (S.sol == null ? 'n/a' : fSol(S.sol)) + '.' : '') + ' Trades allow 1% slippage. ' + (onCurve ? 'Fees: ' + (fee == null ? 'platform fee' : fee + '% platform') + ' plus 0.25% Raydium.' : 'The pool charges its own trading fee, included in the quote.') + '</p>') +
-    '</section></div>';
+    '</section>' + sellPanel(t) + '</div>';
   return '<p><a href="#tokens">All tokens</a></p><div class="cols">' + left + right + '</div>';
 }
 function launchPreview() {
@@ -256,46 +350,48 @@ function launchPreview() {
     '<p class="small">' + esc(L.desc || 'Your description shows here.') + '</p><dl class="kv small"><dt>First buy</dt><dd>' + (parseFloat(L.first) > 0 ? fSol(parseFloat(L.first)) : 'None') + '</dd><dt>Graduates at</dt><dd>' + (parseFloat(L.target) > 0 ? parseFloat(L.target) : 85) + ' SOL</dd><dt>Account rent and network fee</dt><dd>Shown in your wallet</dd></dl>';
 }
 function viewLaunch() {
-  const L = S.launch, has = S.cfg && S.cfg.platformId, fee = S.cfg && S.cfg.platform && S.cfg.platform.feePercent;
-  return '<h1>Launch a token</h1>' + (S.loaded && !has ? '<p class="msg bad">The platform is not registered yet. <a href="#platform">Register it first</a>.</p>' : '') +
+  const L = S.launch, has = S.cfg && S.cfg.program && S.cfg.program.initialized, fee = S.cfg && S.cfg.platformFeePercent;
+  return '<h1>Launch a token</h1>' + (S.loaded && !has ? '<p class="msg bad">The launch program is not set up yet. <a href="#admin">Set it up first</a>.</p>' : '') +
     '<div class="cols"><form class="panel" id="launch-form"><div class="field"><label for="l-name">Name</label><input type="text" id="l-name" maxlength="32" value="' + esc(L.name) + '" required></div>' +
     '<div class="field"><label for="l-symbol">Ticker</label><input type="text" id="l-symbol" maxlength="10" value="' + esc(L.symbol) + '" required></div>' +
     '<div class="field"><label for="l-desc">Description, optional</label><textarea id="l-desc" rows="3" maxlength="500">' + esc(L.desc) + '</textarea></div>' +
     '<div class="field"><label for="l-image">Image, optional. PNG, JPG, WebP or GIF up to 2 MB</label><input type="file" id="l-image" accept="image/png,image/jpeg,image/webp,image/gif"></div>' +
     '<div class="field"><label for="l-first">First buy in SOL, optional</label><input type="number" id="l-first" min="0" step="any" value="' + esc(L.first) + '"><span class="small muted">You are the first buyer on the curve, in the same transaction.</span></div>' +
-    '<div class="field"><label for="l-target">Graduation target in SOL</label><input type="number" id="l-target" min="0" max="85" step="any" value="' + esc(L.target) + '"><span class="small muted">The normal target is 85. For devnet testing you can go lower' +
-    (S.cfg && S.cfg.minTargetSol != null ? ', down to ' + S.cfg.minTargetSol + ' SOL' : '') + ', so a token can graduate with test SOL.</span></div>' +
-    '<button class="btn flame" type="submit">' + (S.owner ? 'Launch token' : 'Connect wallet to launch') + '</button><p class="small muted">The name, ticker and image are written into the token and cannot be changed later.</p></form>' +
+    '<div class="field"><label for="l-target">Graduation target in SOL</label><input type="number" id="l-target" min="1" max="85" step="any" value="' + esc(L.target) + '"><span class="small muted">The normal target is 85. For devnet testing you can go as low as 1 SOL, so a token can graduate with test SOL.</span></div>' +
+    '<button class="btn flame" type="submit">' + (S.owner ? 'Launch token' : 'Connect wallet to launch') + '</button><p class="small muted">Launching takes two approvals in your wallet: one to register the token with the burn vault program, one to create the curve. The name, ticker and image are written into the token and cannot be changed later.</p></form>' +
     '<div class="stack"><section class="panel"><h3>Preview</h3><div class="stack" style="gap:12px" id="launch-preview">' + launchPreview() + '</div></section>' +
-    '<section class="panel"><h3>Every trade of this token</h3><dl class="kv"><dt>Platform fee</dt><dd>' + (fee == null ? 'n/a' : fee + '%') + '</dd><dt>Raydium protocol fee</dt><dd>0.25%</dd><dt>Creator fee</dt><dd>0%</dd><dt>Graduates to a Raydium pool at</dt><dd>85 SOL by default, liquidity locked</dd></dl></section></div></div>';
+    '<section class="panel"><h3>Every trade of this token</h3><dl class="kv"><dt>Platform fee</dt><dd>' + (fee == null ? 'n/a' : fee + '%') + '</dd><dt>Raydium protocol fee</dt><dd>0.25%</dd><dt>Graduates to a Raydium pool at</dt><dd>85 SOL by default, liquidity locked</dd></dl>' +
+    '<h3 style="margin-top:6px">Where the platform fee goes</h3><dl class="kv"><dt>Burn vault, buys tokens and burns them</dt><dd>50%</dd><dt>You, the creator, locked until graduation then vested over 30 days</dt><dd>25%</dd><dt>Platform treasury</dt><dd>25%</dd></dl></section></div></div>';
 }
-function viewPlatform() {
-  const c = S.cfg, ps = c && c.platform;
-  if (!S.loaded) return '<h1>Platform</h1><p class="muted">Loading…</p>';
-  if (S.loadError) return '<h1>Platform</h1><p class="msg bad">' + esc(S.loadError) + '</p>';
-  if (!c.platformId) return '<h1>Platform</h1><div class="cols"><form class="panel" id="plat-form"><h3>Register this launchpad on Raydium LaunchLab</h3><div class="field"><label for="p-name">Platform name</label><input type="text" id="p-name" maxlength="60" required></div>' +
-    '<div class="field"><label for="p-web">Website, optional</label><input type="url" id="p-web" placeholder="https://"></div><div class="field"><label for="p-fee">Platform fee, percent per trade</label><input type="number" id="p-fee" min="0" max="5" step="0.05" value="1.25"></div>' +
-    '<button class="btn flame" type="submit">Register platform</button><p class="small muted">A wallet can register one platform. The wallet that signs becomes its admin and receives its fees.</p></form></div>';
-  return '<h1>Platform</h1><div class="cols"><section class="panel"><h3>Registered on devnet</h3><p class="mono">' + esc(c.platformId) + '</p><dl class="kv"><dt>Platform fee per trade</dt><dd>' + (ps && ps.feePercent != null ? ps.feePercent + '%' : 'n/a') +
-    '</dd><dt>Fees ready to claim</dt><dd>' + (ps ? Number(ps.claimableSol).toFixed(6) + ' SOL' : 'n/a') + '</dd></dl><div class="row"><button class="btn flame" data-act="claim"' + (ps && ps.claimableSol > 0 ? '' : ' disabled') + '>Claim platform fees</button>' +
-    '<a class="btn" href="' + explorer('address', c.platformId) + '" rel="noopener">Solana Explorer</a></div><p class="small muted">Only the platform’s fee wallet can claim. Fees arrive as wrapped SOL, shown as a separate token in your wallet.</p></section></div>';
+function viewAdmin() {
+  const c = S.cfg, p = c && c.program;
+  if (!S.loaded) return '<h1>Admin</h1><p class="muted">Loading…</p>';
+  if (S.loadError) return '<h1>Admin</h1><p class="msg bad">' + esc(S.loadError) + '</p>';
+  if (!p.initialized) return '<h1>Admin</h1><section class="panel"><h3>Set up the launch program</h3><p class="muted" style="max-width:62ch">One time only. The wallet that signs becomes the admin, and its address receives the treasury share of fees. The admin can pause launches and vault sales and change the defaults for new tokens, within fixed limits. The admin can never take a vault’s SOL.</p>' +
+    '<div class="row"><button class="btn flame" data-act="init">' + (S.owner ? 'Set up the program' : 'Connect wallet to set up') + '</button></div></section>';
+  return '<h1>Admin</h1><div class="cols"><section class="panel"><h3>Launch program on devnet</h3><dl class="kv"><dt>Program</dt><dd class="mono">' + esc(short(c.burnpadProgramId)) + '</dd><dt>Admin</dt><dd class="mono">' + esc(short(p.admin)) + '</dd><dt>Treasury</dt><dd class="mono">' + esc(short(p.treasury)) +
+    '</dd><dt>Status</dt><dd>' + (p.paused ? 'Paused' : 'Running') + '</dd></dl><div class="row"><a class="btn" href="' + explorer('address', c.burnpadProgramId) + '" rel="noopener">Solana Explorer</a></div></section>' +
+    '<section class="panel"><h3>Defaults for new tokens</h3><dl class="kv"><dt>Vault bid discount</dt><dd>' + p.params.discountPercent + '%</dd><dt>Limit per sale</dt><dd>' + p.params.maxSalePercent + '% of the vault</dd><dt>Limit per day</dt><dd>' + p.params.dailyPercent + '% of the vault</dd><dt>Price guard</dt><dd>' + p.params.guardPercent + '%</dd><dt>Price window</dt><dd>' + p.params.twapWindowMinutes + ' min</dd><dt>SOL kept in reserve</dt><dd>' + p.params.reserveSol + ' SOL</dd></dl></section></div>';
 }
 function viewHow() {
-  return '<h1>How it works</h1><section class="panel"><ol class="steps"><li><b>Launch.</b> One transaction creates the token on Raydium’s LaunchLab bonding curve. You sign it in your own wallet.</li>' +
-    '<li><b>Trade on the curve.</b> Buys raise the price and sells lower it. Each trade pays the platform fee plus Raydium’s 0.25%.</li>' +
-    '<li><b>Graduate.</b> At its target, 85 SOL by default, Raydium moves the token to a pool and locks its liquidity for good. Trading continues on that pool from the same page.</li></ol></section>' +
-    '<section class="panel"><h2>In development</h2><p style="max-width:65ch">The burn vault and the creator fee stream are designed but not built. Try the mechanics with made-up numbers in the <a href="prototype.html">simulator</a>.</p></section>' +
-    '<section class="panel"><h2>Risk</h2><p style="max-width:65ch">This is test software on a test network. Tokens like these are highly volatile and can go to zero. Nothing here is financial advice.</p></section>';
+  return '<h1>How it works</h1><section class="panel"><ol class="steps"><li><b>Launch.</b> Two approvals in your wallet create the token on Raydium’s LaunchLab bonding curve and register it with the burn vault program. Each token gets its own platform, controlled by the program and not by any person.</li>' +
+    '<li><b>Trade on the curve.</b> Buys raise the price and sells lower it. Each trade pays a 1.25% platform fee plus Raydium’s 0.25%.</li>' +
+    '<li><b>Split the fees.</b> Anyone can harvest a token’s platform fees. They split 50% to its burn vault, 25% to the creator and 25% to the treasury. The split is fixed when the token launches.</li>' +
+    '<li><b>Graduate.</b> At its target, 85 SOL by default, Raydium moves the token to a pool and locks its liquidity for good. Anyone can then open the vault, and the creator’s share starts vesting over 30 days.</li>' +
+    '<li><b>Burn.</b> Holders can sell tokens to the vault at a discount to the recent price. The vault pays SOL and burns the tokens in the same transaction. It limits each sale and each day, and refuses to bid if the price has just jumped.</li>' +
+    '<li><b>If a token never graduates.</b> After 30 days, anyone can move the creator’s locked share to the vault.</li></ol></section>' +
+    '<section class="panel"><h2>Where this stands</h2><p style="max-width:65ch">The vault and fee split run on Solana devnet and have been tested end to end. They have not been audited, so nothing here should go near real funds. Try the mechanics with made-up numbers in the <a href="prototype.html">simulator</a>.</p></section>' +
+    '<section class="panel"><h2>Risk</h2><p style="max-width:65ch">This is test software on a test network. Tokens like these are highly volatile and can go to zero. The vault bids below market, so selling to it is not the same as selling at the pool price. Nothing here is financial advice.</p></section>';
 }
 
 /* ---------- Shell ---------- */
 function render() {
   if (!API) { $('view').innerHTML = '<section class="panel"><h2>Not connected to a server</h2><p class="muted">Set the server address in config.js, then reload.</p></section>'; return; }
   const t = current(), pg = page();
-  $('nav').innerHTML = [['tokens', 'Tokens'], ['launch', 'Launch'], ['platform', 'Platform'], ['how', 'How it works']].map((n) => '<a href="#' + n[0] + '"' + (pg === n[0] ? ' aria-current="page"' : '') + '>' + n[1] + '</a>').join('') + '<a href="prototype.html">Simulator</a>';
+  $('nav').innerHTML = [['tokens', 'Tokens'], ['launch', 'Launch'], ['admin', 'Admin'], ['how', 'How it works']].map((n) => '<a href="#' + n[0] + '"' + (pg === n[0] ? ' aria-current="page"' : '') + '>' + n[1] + '</a>').join('') + '<a href="prototype.html">Simulator</a>';
   $('wallet').innerHTML = S.owner ? '<span class="small num muted">' + (S.sol == null ? '' : fSol(S.sol)) + '</span><span class="btn sm mono" title="' + esc(S.owner) + '">' + esc(short(S.owner)) + '</span>' : '<button class="btn flame sm" data-act="connect">Connect wallet</button>';
-  $('view').innerHTML = t ? viewToken(t) : pg === 'launch' ? viewLaunch() : pg === 'platform' ? viewPlatform() : pg === 'how' ? viewHow() : viewTokens();
-  if (t && !t.missing) quote();
+  $('view').innerHTML = t ? viewToken(t) : pg === 'launch' ? viewLaunch() : pg === 'admin' ? viewAdmin() : pg === 'how' ? viewHow() : viewTokens();
+  if (t && !t.missing) { quote(); vquote(); }
 }
 function quote() {
   const t = current(), box = $('quote');
@@ -325,7 +421,19 @@ document.addEventListener('click', async (e) => {
   if (act === 'side') { S.side = v; S.amt = v === 'buy' ? '0.1' : ''; return render(); }
   if (act === 'pct' && t) { S.amt = String(Math.floor((S.held[t.mint] || 0) * v / 100 * 1e6) / 1e6); return render(); }
   if (act === 'copy') { try { await navigator.clipboard.writeText(v); b.textContent = 'Copied'; } catch (err) { b.textContent = 'Copy failed'; } return; }
-  if (act === 'claim') return run('Claim platform fees', '/tx/claim-fees', {});
+  if (act === 'init') return run('Set up the program', '/tx/init-config', {});
+  if (act === 'harvest' && t) return run('Harvest fees', '/tx/harvest', { mint: t.mint });
+  if (act === 'graduate' && t) return run('Mark graduated', '/tx/graduate', { mint: t.mint });
+  if (act === 'expire' && t) return run('Expire creator share', '/tx/expire', { mint: t.mint });
+  if (act === 'claimcreator' && t) return run('Claim creator share', '/tx/claim-creator', { mint: t.mint });
+  if (act === 'vpct' && t) { S.vamt = String(Math.floor((S.held[t.mint] || 0) * v / 100 * 1e6) / 1e6); render(); return; }
+  if (act === 'vsell' && t) {
+    if (!S.owner) return startConnect();
+    if (!(parseFloat(S.vamt) > 0)) return say('Enter an amount to sell to the vault.', 'bad');
+    const ok = await run('Sell ' + t.symbol + ' to the vault', '/tx/vault-sell', { mint: t.mint, tokens: S.vamt });
+    if (ok) { S.vamt = ''; S.vq = null; render(); }
+    return;
+  }
   if (act === 'trade' && t) {
     if (!S.owner) return startConnect();
     if (!(parseFloat(S.amt) > 0)) return say('Enter an amount first.', 'bad');
@@ -336,6 +444,7 @@ document.addEventListener('click', async (e) => {
 document.addEventListener('input', (e) => {
   const id = e.target.id;
   if (id === 'amt') { S.amt = e.target.value; quote(); }
+  else if (id === 'vamt') { S.vamt = e.target.value; vquote(); }
   else if (id === 'l-image') {
     const f = e.target.files[0];
     if (S.launch.imageUrl) URL.revokeObjectURL(S.launch.imageUrl);
@@ -347,7 +456,6 @@ document.addEventListener('input', (e) => {
 document.addEventListener('submit', async (e) => {
   e.preventDefault();
   if (!S.owner) return startConnect();
-  if (e.target.id === 'plat-form') return run('Register platform', '/tx/create-platform', { name: $('p-name').value, web: $('p-web').value, feePercent: $('p-fee').value });
   if (e.target.id !== 'launch-form') return;
   const L = S.launch, file = $('l-image').files[0];
   let imageData = null;
@@ -356,10 +464,10 @@ document.addEventListener('submit', async (e) => {
     try { imageData = await new Promise((res, rej) => { const r = new FileReader(); r.onload = () => res(r.result); r.onerror = () => rej(new Error('The image could not be read.')); r.readAsDataURL(file); }); }
     catch (err) { return say(esc(err.message), 'bad'); }
   }
-  const built = await run('Launch ' + L.name, '/tx/launch', { name: L.name, symbol: L.symbol, description: L.desc, imageData, firstBuySol: L.first || null, targetSol: L.target && parseFloat(L.target) !== 85 ? L.target : null });
+  const built = await launchFlow('Launch ' + L.name, { name: L.name, symbol: L.symbol, description: L.desc, imageData, firstBuySol: L.first || null, targetSol: L.target && parseFloat(L.target) !== 85 ? L.target : null });
   if (built && built.mint) { S.launch = { name: '', symbol: '', desc: '', first: '', target: '85', imageUrl: '' }; location.hash = 't-' + built.mint; }
 });
-window.addEventListener('hashchange', async () => { S.side = 'buy'; S.amt = '0.1'; render(); await refreshMine(); render(); });
+window.addEventListener('hashchange', async () => { S.side = 'buy'; S.amt = '0.1'; S.vamt = ''; S.vq = null; render(); await refreshMine(); render(); });
 setInterval(() => { const a = document.activeElement; if (!S.busy && !document.hidden && !(a && /INPUT|TEXTAREA/.test(a.tagName)) && page() !== 'launch') refresh(); }, 20000);
 
 render();
