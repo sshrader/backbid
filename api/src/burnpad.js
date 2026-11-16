@@ -218,7 +218,7 @@ async function quoteSale(connection, programId, mint, tokens) {
   const now = Math.floor(Date.now() / 1000)
   const twap = twapX32(readObservations(obsAcc && obsAcc.data, tokenIsA), now, vault.params.twapWindow, spot)
   const info = { ...out, spotX32: spot, twapX32: twap, vault, launch, pool, poolParts: { vaultA: pool.vaultA, vaultB: pool.vaultB, observation: pool.observation }, cpmm: launch.cpmmPool }
-  if (twap === null) return { ...info, reason: 'The pool needs about ' + Math.ceil(vault.params.twapWindow / 60) + ' minutes of price history before the vault can bid.' }
+  if (twap === null) return { ...info, reason: 'The pool has no price record old enough yet. Someone needs to make a small buy or sell on the pool, then the vault can bid ' + Math.ceil(vault.params.twapWindow / 60) + ' minute(s) later.' }
   if (!withinGuard(spot, twap, vault.params.guardBps)) return { ...info, reason: 'The price has moved too much in the last few minutes. The vault will bid again once it settles.' }
   const bid = bidFor(tokens, spot, twap, vault.params.discountBps)
   info.bidLamports = bid

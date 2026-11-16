@@ -116,7 +116,7 @@ input[type="text"], input[type="number"], input[type="url"], input[type="file"],
 const API = (window.API_URL || '').replace(/\/$/, '');
 const $ = (id) => document.getElementById(id);
 const esc = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
-const fSol = (x) => (Math.abs(x) >= 100 ? x.toFixed(1) : Math.abs(x) >= 1 ? x.toFixed(2) : x.toFixed(4)) + ' SOL';
+const fSol = (x) => (x === 0 ? '0' : Math.abs(x) >= 100 ? x.toFixed(1) : Math.abs(x) >= 1 ? x.toFixed(2) : Math.abs(x) >= 0.0001 ? x.toFixed(4) : x.toFixed(8).replace(/0+$/, '')) + ' SOL';
 const fTok = (x) => x >= 1e9 ? (x / 1e9).toFixed(2) + 'B' : x >= 1e6 ? (x / 1e6).toFixed(2) + 'M' : x >= 1e3 ? (x / 1e3).toFixed(1) + 'K' : (+x).toFixed(x < 10 && x > 0 ? 2 : 0);
 const fPrice = (x) => x == null ? 'n/a' : (x * 1e6).toFixed(4);
 const short = (a) => a.slice(0, 4) + '…' + a.slice(-4);
@@ -278,7 +278,7 @@ function vquoteHtml() {
   if (!S.vq || S.vq.amt !== S.vamt) return '<span class="muted">Getting the vault’s bid…</span>';
   if (S.vq.error) return '<span style="color:var(--bad)">' + esc(S.vq.error) + '</span>';
   const q = S.vq.quote;
-  return q.ok ? 'The vault pays about <b>' + fSol(q.bidSol) + '</b> for <b>' + fTok(x) + '</b>, in SOL. The tokens are burned.' : '<span style="color:var(--bad)">' + esc(q.reason || 'The vault cannot take that right now.') + '</span>' + (q.maxSaleSol != null ? '<div class="small muted">Largest sale right now: ' + fSol(q.maxSaleSol) + '.</div>' : '');
+  return q.ok ? 'The vault pays about <b>' + fSol(q.bidSol) + '</b> for <b>' + fTok(x) + '</b>, in SOL. The tokens are burned.' : '<span style="color:var(--bad)">' + esc(q.reason || 'The vault cannot take that right now.') + '</span>' + (/price record/.test(q.reason || '') ? '<div class="row"><button class="btn sm" data-act="recprice">Record the price (buys 0.001 SOL)</button></div>' : '') + (q.maxSaleSol != null ? '<div class="small muted">Largest sale right now: ' + fSol(q.maxSaleSol) + '.</div>' : '');
 }
 function sellPanel(t) {
   const b = t.pool && t.pool.burnpad;
@@ -426,6 +426,7 @@ document.addEventListener('click', async (e) => {
   if (act === 'graduate' && t) return run('Mark graduated', '/tx/graduate', { mint: t.mint });
   if (act === 'expire' && t) return run('Expire creator share', '/tx/expire', { mint: t.mint });
   if (act === 'claimcreator' && t) return run('Claim creator share', '/tx/claim-creator', { mint: t.mint });
+  if (act === 'recprice' && t) { const ok = await run('Record the price', '/tx/buy', { mint: t.mint, sol: '0.001' }); if (ok) { S.vq = null; say('Price recorded. Wait about a minute, then retype the amount to get the vault’s bid.', 'good'); } return; }
   if (act === 'vpct' && t) { S.vamt = String(Math.floor((S.held[t.mint] || 0) * v / 100 * 1e6) / 1e6); render(); return; }
   if (act === 'vsell' && t) {
     if (!S.owner) return startConnect();
