@@ -1,0 +1,47 @@
+name: API end-to-end test
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  e2e:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    env:
+      STATE_DIR: ${{ github.workspace }}/.state
+      RPC_URL: https://api.devnet.solana.com
+    steps:
+      - uses: actions/checkout@v4
+
+      # Same throwaway devnet wallet and program as the Burnpad devnet test. Devnet only.
+      - name: Restore saved keys
+        uses: actions/cache/restore@v4
+        with:
+          path: .state
+          key: state-${{ github.run_id }}
+          restore-keys: state-
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Install API dependencies
+        working-directory: api
+        run: npm install --no-audit --no-fund
+
+      - name: Run the end-to-end test
+        working-directory: api
+        run: node e2e/e2e.mjs 2>&1 | tee "$GITHUB_WORKSPACE/result.txt"
+
+      - name: Show the result on the run page
+        if: always()
+        run: |
+          {
+            echo "### API end-to-end test"
+            echo '```'
+            tail -n 70 result.txt 2>/dev/null || echo "No output."
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
