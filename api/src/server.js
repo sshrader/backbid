@@ -11,8 +11,9 @@ const path = require('path')
 const express = require('express')
 const cors = require('cors')
 const BN = require('bn.js')
-const { Connection, Keypair, PublicKey, VersionedTransaction } = require('@solana/web3.js')
-const { NATIVE_MINT } = require('@solana/spl-token')
+const { ComputeBudgetProgram, Connection, Keypair, PublicKey, TransactionMessage, VersionedTransaction } = require('@solana/web3.js')
+const { NATIVE_MINT, createAssociatedTokenAccountIdempotentInstruction, createCloseAccountInstruction } = require('@solana/spl-token')
+const B = require('./burnpad')
 const {
   Raydium,
   TxVersion,
@@ -30,6 +31,8 @@ const {
 
 const DEVNET_GENESIS = 'EtWTRABZaYq6iMfeYKouRu166VU2xqa1wcaWoxPkrZBG'
 const PROGRAM = DEVNET_PROGRAM_ID.LAUNCHPAD_PROGRAM
+const BURNPAD = new PublicKey(process.env.BURNPAD_PROGRAM_ID || '9maH9DVCxUd4bjfCNnANW673Xt2YMXaWwQr8UEqAi1ZL') // the fee-split and burn-vault program
+const PLATFORM_FEE_RATE = 12500 // the platform's 1.25% trade fee, out of 1,000,000
 const CPMM = DEVNET_PROGRAM_ID.CREATE_CPMM_POOL_PROGRAM // Raydium's pool program, where tokens trade after graduation
 const TOKEN_DECIMALS = 6
 const RPC_URL = process.env.RPC_URL || 'https://api.devnet.solana.com'
@@ -40,7 +43,7 @@ const PORT = process.env.PORT || 3000
 const connection = new Connection(RPC_URL, 'confirmed')
 
 /* ---------- Store: token list, metadata and the saved platform ID ---------- */
-let store = { platformId: null, tokens: {} }
+let store = { tokens: {} }
 try {
   store = { ...store, ...JSON.parse(fs.readFileSync(STORE, 'utf8')) }
 } catch (e) {
@@ -79,7 +82,6 @@ function readImage(dataUrl) {
   need(type, 'That file is not a PNG, JPG, WebP or GIF image.')
   return { bytes, ext: type.ext }
 }
-const platformId = () => process.env.PLATFORM_ID || store.platformId || null
 
 /* ---------- Helpers ---------- */
 class Bad extends Error {}
@@ -232,24 +234,11 @@ async function describeFresh(mintStr) {
     creator: poolInfo.creator.toBase58(),
     price: cpmm && cpmm.price != null ? cpmm.price : price,
     platformId: poolInfo.platformId.toBase58(),
+    burnpad: await burnpadInfo(mintStr).catch((e) => {
+      console.error('burnpad info:', e.message)
+      return null
+    }),
   }
-}
-
-/** The platform's fee rate and the SOL sitting in its fee vault. Trading fees go straight to this vault. */
-async function platformStatus() {
-  const id = platformId()
-  if (!id) return null
-  const key = new PublicKey(id)
-  const out = { feePercent: null, claimableSol: 0 }
-  const account = await connection.getAccountInfo(key)
-  if (account) out.feePercent = Number(PlatformConfig.decode(account.data).feeRate.toString()) / 10000
-  const vault = PublicKey.findProgramAddressSync([key.toBuffer(), NATIVE_MINT.toBuffer()], PROGRAM)[0]
-  try {
-    out.claimableSol = Number((await connection.getTokenAccountBalance(vault)).value.uiAmountString)
-  } catch (e) {
-    /* the vault account does not exist until the first fee arrives */
-  }
-  return out
 }
 
 /** Raydium's devnet launch config for SOL-quoted curves. It holds the lowest graduation target the program accepts. */
@@ -258,6 +247,50 @@ async function launchConfig() {
   const account = await connection.getAccountInfo(configId)
   need(account, 'Raydium’s devnet launch config was not found.')
   return { configId, configInfo: LaunchpadConfig.decode(account.data) }
+}
+
+
+/* ---------- The burnpad program: transactions, vault and creator-stream info ---------- */
+const lam = (x) => Number(x) / 1e9
+const paramsJson = (p) => ({ discountPercent: p.discountBps / 100, maxSalePercent: p.maxSaleBps / 100, dailyPercent: p.dailyBps / 100, guardPercent: p.guardBps / 100, twapWindowMinutes: p.twapWindow / 60, reserveSol: lam(p.reserve) })
+
+/** Build an unsigned v0 transaction from instructions. The wallet signs it. */
+async function buildTx(payer, instructions, units = 400000) {
+  const { blockhash } = await connection.getLatestBlockhash()
+  const message = new TransactionMessage({ payerKey: payer, recentBlockhash: blockhash, instructions: [ComputeBudgetProgram.setComputeUnitLimit({ units }), ...instructions] }).compileToV0Message()
+  return new VersionedTransaction(message)
+}
+
+/** Wrapped SOL account for the wallet, created if missing, and closed after so the payout lands as plain SOL. */
+const wsolWrap = (owner) => createAssociatedTokenAccountIdempotentInstruction(owner, B.wsolAta(owner), owner, NATIVE_MINT)
+const wsolUnwrap = (owner) => createCloseAccountInstruction(B.wsolAta(owner), owner, owner)
+
+/** What the program knows about a token: its creator, burn vault and creator stream. Null for tokens launched before the program. */
+async function burnpadInfo(mint) {
+  const a = B.addresses(BURNPAD, new PublicKey(mint))
+  const [l, v, st, vw, fv] = await connection.getMultipleAccountsInfo([a.launch, a.vault, a.stream, B.wsolAta(a.vault), a.feeVault])
+  const launch = B.readLaunch(l && l.data)
+  if (!launch) return null
+  const vault = B.readVault(v && v.data)
+  const stream = B.readStream(st && st.data)
+  const now = Math.floor(Date.now() / 1000)
+  let creatorStream = null
+  if (stream) {
+    const elapsed = stream.vestStart > 0 && now > stream.vestStart ? Math.min(now - stream.vestStart, B.THIRTY_DAYS) : 0
+    const vested = (stream.totalReceived * BigInt(elapsed)) / BigInt(B.THIRTY_DAYS)
+    creatorStream = { totalSol: lam(stream.totalReceived), claimedSol: lam(stream.claimed), claimableSol: lam(vested > stream.claimed ? vested - stream.claimed : 0n), vestStart: stream.vestStart || null }
+  }
+  return {
+    creator: launch.creator.toBase58(),
+    graduated: launch.graduatedAt > 0,
+    expired: launch.expired,
+    expiresAt: launch.launchedAt + B.THIRTY_DAYS,
+    canExpire: launch.graduatedAt === 0 && !launch.expired && now >= launch.launchedAt + B.THIRTY_DAYS,
+    harvestedSol: lam(launch.totalHarvested),
+    pendingFeesSol: lam(B.tokenAmount(fv && fv.data)),
+    vault: vault && { sol: lam(B.tokenAmount(vw && vw.data)), burnedTokens: Number(vault.tokensBurned) / 10 ** TOKEN_DECIMALS, paidSol: lam(vault.totalPaid), paused: vault.paused, ...paramsJson(vault.params) },
+    creatorStream,
+  }
 }
 
 const publicUrl = (req) => (process.env.PUBLIC_URL || req.protocol + '://' + req.get('host')).replace(/\/$/, '')
@@ -289,15 +322,21 @@ app.get('/health', (req, res) => res.json({ ok: true }))
 app.get(
   '/config',
   route(async (req, res) => {
-    let platform = null
     let minTargetSol = null
+    let program = { initialized: false }
     try {
-      platform = await platformStatus()
-      minTargetSol = fromUnits((await launchConfig()).configInfo.minFundRaisingB, 9)
+      const acc = await connection.getAccountInfo(B.configAddress(BURNPAD))
+      const c = B.readConfig(acc && acc.data)
+      if (c) program = { initialized: true, admin: c.admin.toBase58(), treasury: c.treasury.toBase58(), paused: c.paused, params: paramsJson(c.params) }
     } catch (e) {
       console.error('config:', e.message)
     }
-    res.json({ cluster: 'devnet', programId: PROGRAM.toBase58(), platformId: platformId(), platformFromEnv: Boolean(process.env.PLATFORM_ID), platform, minTargetSol, defaultTargetSol: 85 })
+    try {
+      minTargetSol = fromUnits((await launchConfig()).configInfo.minFundRaisingB, 9)
+    } catch (e) {
+      /* optional */
+    }
+    res.json({ cluster: 'devnet', programId: PROGRAM.toBase58(), burnpadProgramId: BURNPAD.toBase58(), program, platformFeePercent: PLATFORM_FEE_RATE / 10000, minTargetSol, defaultTargetSol: 85 })
   })
 )
 
@@ -393,47 +432,17 @@ app.post(
   })
 )
 
-/* Register a LaunchLab platform. One per wallet. The wallet that signs becomes its admin and fee wallet. */
-app.post(
-  '/tx/create-platform',
-  route(async (req, res) => {
-    const owner = pubkey(req.body.owner, 'Owner')
-    const name = text(req.body.name, 60, 'Platform name', true)
-    const web = httpUrl(req.body.web, 'Website')
-    const feePercent = Number(req.body.feePercent)
-    need(feePercent >= 0 && feePercent <= 5, 'Platform fee must be between 0 and 5 percent.')
-
-    const configs = await (await fetch('https://api-v3-devnet.raydium.io/main/cpmm-config')).json()
-    const cpConfig = (configs.data || []).slice().sort((a, b) => a.index - b.index)[0]
-    need(cpConfig, 'Could not read Raydium’s devnet pool configs. Try again shortly.')
-
-    const raydium = await sdkFor(owner)
-    const { transaction, extInfo } = await raydium.launchpad.createPlatformConfig({
-      programId: PROGRAM,
-      platformAdmin: owner,
-      platformClaimFeeWallet: owner,
-      platformLockNftWallet: owner,
-      platformVestingWallet: owner,
-      cpConfigId: new PublicKey(cpConfig.id),
-      transferFeeExtensionAuth: owner,
-      creatorFeeRate: new BN(0),
-      // All pool liquidity is locked at graduation and the platform holds the fee rights.
-      migrateCpLockNftScale: { platformScale: new BN(1000000), creatorScale: new BN(0), burnScale: new BN(0) },
-      feeRate: new BN(Math.round(feePercent * 10000)), // out of 1,000,000
-      name,
-      web: web || 'https://example.com',
-      img: web || 'https://example.com',
-      txVersion: TxVersion.V0,
-    })
-    res.json({ transactions: [toB64(transaction)], platformId: extInfo.platformId.toBase58() })
-  })
-)
+/* A launch takes two transactions. The first registers the token with the program and creates its own LaunchLab platform.
+   The second creates the curve on that platform, and the mint's keypair co-signs it, so the server holds that key between the two. */
+const pendingLaunches = new Map() // mint -> { pair, owner, name, symbol, uri, firstBuy, target, at }
+const PENDING_MS = 15 * 60 * 1000
+function sweepPending() {
+  for (const [m, p] of pendingLaunches) if (Date.now() - p.at > PENDING_MS) pendingLaunches.delete(m)
+}
 
 app.post(
   '/tx/launch',
   route(async (req, res) => {
-    const platform = platformId()
-    need(platform, 'Register your platform first, then launch.')
     const owner = pubkey(req.body.owner, 'Owner')
     const name = text(req.body.name, 32, 'Name', true)
     const symbol = text(req.body.symbol, 10, 'Ticker', true).toUpperCase()
@@ -441,55 +450,183 @@ app.post(
     const upload = req.body.imageData ? readImage(req.body.imageData) : null
     const website = httpUrl(req.body.website, 'Website')
     const firstBuy = req.body.firstBuySol ? parseUnits(req.body.firstBuySol, 9, 'First buy') : null
+    const target = req.body.targetSol ? parseUnits(req.body.targetSol, 9, 'Graduation target') : null
+    if (target) need(target.gte(new BN('1000000000')) && target.lte(new BN('85000000000')), 'The graduation target must be between 1 and 85 SOL.')
+
+    const configAcc = await connection.getAccountInfo(B.configAddress(BURNPAD))
+    const cfg = B.readConfig(configAcc && configAcc.data)
+    need(cfg, 'The launch program is not set up yet. Open the Admin page and set it up first.')
+    need(!cfg.paused, 'New launches are paused.')
 
     const pair = Keypair.generate()
-    const mint = pair.publicKey.toBase58()
-    const raydium = await sdkFor(owner)
-    const { configId, configInfo } = await launchConfig()
-    // Optional custom graduation target, for devnet testing. Raydium's config sets the floor.
-    const target = req.body.targetSol ? parseUnits(req.body.targetSol, 9, 'Graduation target') : null
-    if (target) {
-      need(target.gte(configInfo.minFundRaisingB), 'Raydium’s lowest graduation target on devnet is ' + fromUnits(configInfo.minFundRaisingB, 9) + ' SOL.')
-      need(target.lte(new BN('85000000000')), 'The graduation target can be at most 85 SOL.')
-    }
-    const mintBInfo = await raydium.token.getTokenInfo(configInfo.mintB)
-
-    const { transactions } = await raydium.launchpad.createLaunchpad({
-      programId: PROGRAM,
-      mintA: pair.publicKey,
-      decimals: TOKEN_DECIMALS,
-      name,
-      symbol,
-      migrateType: 'cpmm',
-      uri: publicUrl(req) + '/metadata/' + mint + '.json',
-      configId,
-      configInfo,
-      mintBDecimals: mintBInfo.decimals,
-      mintBProgram: new PublicKey(mintBInfo.programId),
-      platformId: new PublicKey(platform),
-      txVersion: TxVersion.V0,
-      slippage: new BN(100), // 1%
-      buyAmount: firstBuy || new BN(1),
-      createOnly: !firstBuy,
-      extraSigners: [pair],
-      ...(target ? { totalFundRaisingB: target } : {}),
-    })
-    for (const tx of transactions) coSign(tx, pair)
+    const mint = pair.publicKey
+    const a = B.addresses(BURNPAD, mint)
+    const cpConfigs = await (await fetch('https://api-v3-devnet.raydium.io/main/cpmm-config')).json()
+    const cpConfig = (cpConfigs.data || []).slice().sort((x, y) => x.index - y.index)[0]
+    need(cpConfig, 'Could not read Raydium’s devnet pool configs. Try again shortly.')
 
     let image = '', imageFile = null
     if (upload) {
-      imageFile = mint + '.' + upload.ext
+      imageFile = mint.toBase58() + '.' + upload.ext
       fs.mkdirSync(IMAGES, { recursive: true })
       fs.writeFileSync(path.join(IMAGES, imageFile), upload.bytes)
       image = publicUrl(req) + '/images/' + imageFile
     }
+    const atas = [a.authority, a.vault, a.stream, cfg.treasury].map((o) => createAssociatedTokenAccountIdempotentInstruction(owner, B.wsolAta(o), o, NATIVE_MINT))
+    const create = B.ixCreateLaunch(BURNPAD, owner, mint, new PublicKey(cpConfig.id), { feeRate: PLATFORM_FEE_RATE, name, web: website || publicUrl(req), img: image })
+    const tx = await buildTx(owner, [...atas, create], 600000)
+
+    sweepPending()
     prune()
-    store.tokens[mint] = { mint, name, symbol, description, image, imageFile, website, creator: owner.toBase58(), createdAt: Date.now(), confirmed: false }
+    pendingLaunches.set(mint.toBase58(), { pair, owner: owner.toBase58(), name, symbol, firstBuy, target, uri: publicUrl(req) + '/metadata/' + mint.toBase58() + '.json', at: Date.now() })
+    store.tokens[mint.toBase58()] = { mint: mint.toBase58(), name, symbol, description, image, imageFile, website, creator: owner.toBase58(), createdAt: Date.now(), confirmed: false }
     save()
-    res.json({ mint, transactions: transactions.map(toB64) })
+    res.json({ mint: mint.toBase58(), transactions: [toB64(tx)] })
   })
 )
 
+app.post(
+  '/tx/launch-pool',
+  route(async (req, res) => {
+    const owner = pubkey(req.body.owner, 'Owner')
+    const mint = pubkey(req.body.mint, 'Mint')
+    const p = pendingLaunches.get(mint.toBase58())
+    need(p && p.owner === owner.toBase58(), 'This launch expired. Start it again from the launch page.')
+    const a = B.addresses(BURNPAD, mint)
+    need(await connection.getAccountInfo(a.platform), 'The first launch step has not confirmed yet. Wait a few seconds and try again.')
+
+    const raydium = await sdkFor(owner)
+    const { configId, configInfo } = await launchConfig()
+    const mintBInfo = await raydium.token.getTokenInfo(configInfo.mintB)
+    const { transactions } = await raydium.launchpad.createLaunchpad({
+      programId: PROGRAM,
+      mintA: mint,
+      decimals: TOKEN_DECIMALS,
+      name: p.name,
+      symbol: p.symbol,
+      migrateType: 'cpmm',
+      uri: p.uri,
+      configId,
+      configInfo,
+      mintBDecimals: mintBInfo.decimals,
+      mintBProgram: new PublicKey(mintBInfo.programId),
+      platformId: a.platform,
+      txVersion: TxVersion.V0,
+      slippage: new BN(100), // 1%
+      buyAmount: p.firstBuy || new BN(1),
+      createOnly: !p.firstBuy,
+      extraSigners: [p.pair],
+      ...(p.target ? { totalFundRaisingB: p.target } : {}),
+    })
+    for (const tx of transactions) coSign(tx, p.pair)
+    res.json({ mint: mint.toBase58(), transactions: transactions.map(toB64) })
+  })
+)
+
+/* Anyone can move a token's trading fees into its vault, creator stream and the treasury. */
+app.post(
+  '/tx/harvest',
+  route(async (req, res) => {
+    const owner = pubkey(req.body.owner, 'Owner')
+    const mint = pubkey(req.body.mint, 'Mint')
+    const a = B.addresses(BURNPAD, mint)
+    const [l, fv, cfgAcc] = await connection.getMultipleAccountsInfo([a.launch, a.feeVault, a.config])
+    need(B.readLaunch(l && l.data), 'This token is not registered with the program.')
+    need(B.tokenAmount(fv && fv.data) > 0n, 'There are no fees to harvest yet. They build up as people trade.')
+    const cfg = B.readConfig(cfgAcc && cfgAcc.data)
+    res.json({ transactions: [toB64(await buildTx(owner, [B.ixHarvest(BURNPAD, mint, cfg.treasury)]))] })
+  })
+)
+
+/* Anyone can record that a token has moved to its Raydium pool. This opens the vault and starts the creator's vesting. */
+app.post(
+  '/tx/graduate',
+  route(async (req, res) => {
+    const owner = pubkey(req.body.owner, 'Owner')
+    const mint = pubkey(req.body.mint, 'Mint')
+    const raydium = await readSdk()
+    const { poolInfo, platformInfo } = await loadPool(raydium, mint)
+    need(Number(poolInfo.status) === 2, 'This token has not moved to its Raydium pool yet.')
+    const a = B.addresses(BURNPAD, mint)
+    const launch = B.readLaunch((await connection.getAccountInfo(a.launch))?.data)
+    need(launch, 'This token is not registered with the program.')
+    need(!launch.graduatedAt, 'This token is already marked as graduated.')
+    need(!launch.expired, 'The creator stream for this token has expired.')
+    const pool = B.cpmmPool(platformInfo.cpConfigId, mint)
+    need(await connection.getAccountInfo(pool), 'Raydium has not created the pool yet. Try again in a minute.')
+    res.json({ transactions: [toB64(await buildTx(owner, [B.ixMarkGraduated(BURNPAD, mint, pool)]))] })
+  })
+)
+
+/* What the vault would pay for an amount of tokens, and whether it would accept the sale right now. */
+const quoteJson = (q) => ({
+  ok: q.ok,
+  reason: q.reason,
+  bidSol: lam(q.bidLamports || 0n),
+  vaultSol: lam(q.vaultLamports || 0n),
+  maxSaleSol: q.maxSaleLamports != null ? lam(q.maxSaleLamports) : null,
+  pricePerTokenSol: q.pricePerTokenSol || null,
+})
+app.get(
+  '/vault/:mint',
+  route(async (req, res) => {
+    const mint = pubkey(req.params.mint, 'Mint')
+    const info = await burnpadInfo(mint.toBase58())
+    need(info, 'This token has no burn vault.')
+    const tokens = req.query.tokens ? BigInt(parseUnits(req.query.tokens, TOKEN_DECIMALS, 'Amount').toString()) : null
+    res.json({ burnpad: info, quote: tokens ? quoteJson(await B.quoteSale(connection, BURNPAD, mint, tokens)) : null })
+  })
+)
+
+app.post(
+  '/tx/vault-sell',
+  route(async (req, res) => {
+    const owner = pubkey(req.body.owner, 'Owner')
+    const mint = pubkey(req.body.mint, 'Mint')
+    const tokens = BigInt(parseUnits(req.body.tokens, TOKEN_DECIMALS, 'Amount').toString())
+    const q = await B.quoteSale(connection, BURNPAD, mint, tokens)
+    need(q.ok, q.reason || 'The vault cannot take that sale right now.')
+    const minOut = (q.bidLamports * 97n) / 100n // allow for a trade or two landing before this one
+    const sell = B.ixSellToVault(BURNPAD, owner, mint, tokens, minOut, q.cpmm, q.poolParts)
+    res.json({ transactions: [toB64(await buildTx(owner, [wsolWrap(owner), sell, wsolUnwrap(owner)], 500000))], bidSol: lam(q.bidLamports) })
+  })
+)
+
+app.post(
+  '/tx/claim-creator',
+  route(async (req, res) => {
+    const owner = pubkey(req.body.owner, 'Owner')
+    const mint = pubkey(req.body.mint, 'Mint')
+    const info = await burnpadInfo(mint.toBase58())
+    need(info, 'This token is not registered with the program.')
+    need(info.creator === owner.toBase58(), 'Only the token’s creator can claim.')
+    need(info.graduated && !info.expired, 'The creator’s share unlocks when the token graduates.')
+    need(info.creatorStream && info.creatorStream.claimableSol > 0, 'Nothing has vested yet. The share vests over 30 days from graduation.')
+    res.json({ transactions: [toB64(await buildTx(owner, [wsolWrap(owner), B.ixClaimCreator(BURNPAD, owner, mint), wsolUnwrap(owner)]))] })
+  })
+)
+
+/* Anyone can move the creator's share to the vault if the token has not graduated within 30 days. */
+app.post(
+  '/tx/expire',
+  route(async (req, res) => {
+    const owner = pubkey(req.body.owner, 'Owner')
+    const mint = pubkey(req.body.mint, 'Mint')
+    const info = await burnpadInfo(mint.toBase58())
+    need(info && info.canExpire, 'This token is not past its 30-day deadline, or has already graduated.')
+    res.json({ transactions: [toB64(await buildTx(owner, [B.ixExpireCreator(BURNPAD, mint)]))] })
+  })
+)
+
+/* One-time setup of the program. The wallet that signs becomes the admin, and its address the treasury. */
+app.post(
+  '/tx/init-config',
+  route(async (req, res) => {
+    const owner = pubkey(req.body.owner, 'Owner')
+    need(!(await connection.getAccountInfo(B.configAddress(BURNPAD))), 'The program is already set up.')
+    res.json({ transactions: [toB64(await buildTx(owner, [B.ixInitializeConfig(BURNPAD, owner, owner)]))] })
+  })
+)
 app.post(
   '/tx/buy',
   route(async (req, res) => {
@@ -557,27 +694,6 @@ app.post(
   })
 )
 
-/* Collect the platform's fees. Only the platform's fee wallet can sign this. */
-app.post(
-  '/tx/claim-fees',
-  route(async (req, res) => {
-    const platform = platformId()
-    need(platform, 'No platform is registered yet.')
-    const owner = pubkey(req.body.owner, 'Owner')
-    const status = await platformStatus()
-    need(status.claimableSol > 0, 'There are no platform fees to claim yet. Fees build up as people buy and sell.')
-    const raydium = await sdkFor(owner)
-    const { transaction } = await raydium.launchpad.claimVaultPlatformFee({
-      programId: PROGRAM,
-      platformId: new PublicKey(platform),
-      claimFeeWallet: owner,
-      mintB: NATIVE_MINT,
-      txVersion: TxVersion.V0,
-    })
-    res.json({ transactions: [toB64(transaction)] })
-  })
-)
-
 /* Relay wallet-signed transactions to devnet, in order, and wait for each to confirm. */
 app.post(
   '/tx/send',
@@ -608,16 +724,7 @@ app.post(
       mint.confirmed = true
       save()
     }
-    if (req.body.platformId && !platformId()) {
-      const id = pubkey(req.body.platformId, 'Platform ID')
-      const account = await connection.getAccountInfo(id)
-      if (account && account.owner.equals(PROGRAM)) {
-        PlatformConfig.decode(account.data)
-        store.platformId = id.toBase58()
-        save()
-      }
-    }
-    res.json({ signatures, platformId: platformId() })
+    res.json({ signatures })
   })
 )
 
@@ -629,7 +736,7 @@ connection
       console.error('RPC_URL does not point at Solana devnet. This server is devnet-only and will not start.')
       process.exit(1)
     }
-    app.listen(PORT, () => console.log('Devnet API listening on port ' + PORT + ', platform ' + (platformId() || 'not registered yet')))
+    app.listen(PORT, () => console.log('Devnet API listening on port ' + PORT + ', burnpad program ' + BURNPAD.toBase58()))
   })
   .catch((e) => {
     console.error('Could not reach the RPC at RPC_URL:', e.message)
